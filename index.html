@@ -129,11 +129,7 @@
                         <button id="btn-stop-scan" disabled>Stop</button>
                         <button id="btn-capture" title="Freeze frame and attempt decode">Capture</button>
                         <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
-                        <button id="btn-focus" title="Try to autofocus">Focus</button>
-                        <button id="btn-test-camera" title="Quick camera test">Test Camera</button>
-                        <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
-                            <button id="btn-force-1x" title="Force use of main 1x back camera" style="margin-left:6px;">Force 1x</button>
-                            <button id="btn-force-ultra" title="Force use of ultrawide back camera" style="margin-left:6px;">Force Ultra</button>
+                        <!-- camera selection removed (app will prefer ultrawide back camera by default) -->
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
                     <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
@@ -205,7 +201,7 @@
             let scanningPaused = false;
             let lastScanned = {value:null, ts:0};
             const SCAN_COOLDOWN = 1400; // ms
-            const cameraSelect = document.getElementById('camera-select');
+            const cameraSelect = document.getElementById('camera-select'); // may be null now (select removed)
             // hidden canvas to crop video center for scanning (improves detection reliability)
             const scanCanvas = document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d');
@@ -465,22 +461,22 @@
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
-                                                // helper: choose preferred device favoring "1x" / wide back camera and avoid ultrawide/tele
-                                                const preferRegex = /(\b1x\b|\bwide\b|\bback\b|\brear\b|environment|primary|main)/i;
-                                                const avoidRegex = /ultra|ultrawide|tele|2x|0\.5x|0\.3x|front|selfie|depth/i;
-                                                // populate camera select
+                                            // prefer ultrawide / back camera where available
+                                            const ultraRegex = /(ultra|ultrawide|0\.5x|0.5x|0\.3x|0.3x|wideangle|wide angle|ultra wide)/i;
+                                            const backRegex = /(back|rear|environment|main)/i;
+                                            let p = devices.find(d=> ultraRegex.test(d.label) && backRegex.test(d.label));
+                                            if(!p) p = devices.find(d=> ultraRegex.test(d.label));
+                                            if(!p) p = devices.find(d=> backRegex.test(d.label));
+                                            if(!p) p = devices[devices.length-1] || devices[0];
+                                            preferred = p;
+                                            // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
+                                            if(cameraSelect){
                                                 cameraSelect.innerHTML = '';
                                                 devices.forEach((d, i)=>{ const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt); });
-                                                // find best candidate: prefer labels matching preferRegex and not avoidRegex
-                                                let p = devices.find(d=> preferRegex.test(d.label) && !avoidRegex.test(d.label));
-                                                if(!p) p = devices.find(d=> !avoidRegex.test(d.label) && /back|rear|environment/i.test(d.label));
-                                                if(!p) p = devices.find(d=> !/front|selfie/i.test(d.label));
-                                                if(!p) p = devices[devices.length-1] || devices[0];
-                                                preferred = p;
-                                                cameraSelect.value = preferred.deviceId;
-                                                cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
+                                                try{ cameraSelect.value = preferred.deviceId; cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none'; }catch(e){}
+                                            }
                                         }
-                                        const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : (cameraSelect.value || (preferred ? preferred.deviceId : undefined));
+                                        const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : ((cameraSelect && cameraSelect.value) ? cameraSelect.value : (preferred ? preferred.deviceId : undefined));
                     // start ZXing decode on the chosen device
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
@@ -676,52 +672,9 @@
                 }catch(err){ console.warn(err); setPermHint('Focus request failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
             };
 
-            // When user changes camera selection, restart the scan cleanly
-            cameraSelect.onchange = async ()=>{
-                try{
-                    // if we have a running stream/reader, stop it first
-                    stopCameraScan();
-                    // small delay to ensure tracks are stopped on some devices
-                    await new Promise(r=>setTimeout(r,120));
-                    // start with the newly selected device
-                    await startCameraScan();
-                }catch(err){ console.warn('camera change error', err); }
-            };
+            // cameraSelect onchange removed — the app chooses ultrawide back camera by default
 
-            // Force 1x button: explicitly restart scan using currently selected preferred device id
-            const btnForce1x = document.getElementById('btn-force-1x');
-            if(btnForce1x){ btnForce1x.onclick = async ()=>{
-                try{
-                    const dev = cameraSelect.value;
-                    if(!dev){ setPermHint('No camera device selected to force.', '#b91c1c'); return; }
-                    // stop and restart with the chosen device id
-                    stopCameraScan(); await new Promise(r=>setTimeout(r,140)); await startCameraScan({forceDeviceId: dev});
-                    setPermHint('Forced 1x camera request sent.', '#059669');
-                }catch(e){ console.warn('force1x failed', e); setPermHint('Force 1x failed: '+(e && e.message?e.message:String(e)), '#b91c1c'); }
-            }}
-
-            // Force Ultra button: explicitly select an ultrawide back camera if available
-            const btnForceUltra = document.getElementById('btn-force-ultra');
-            if(btnForceUltra){ btnForceUltra.onclick = async ()=>{
-                try{
-                    // get device list (use codeReader if available to list labeled devices)
-                    let devices = [];
-                    try{ if(codeReader && typeof codeReader.listVideoInputDevices === 'function') devices = await codeReader.listVideoInputDevices(); }catch(e){ /* ignore */ }
-                    if(!devices || !devices.length){ const all = await navigator.mediaDevices.enumerateDevices(); devices = all.filter(d=>d.kind==='videoinput'); }
-                    if(!devices || !devices.length){ setPermHint('No camera devices available.', '#b91c1c'); return; }
-                    // match ultrawide/ultra/0.5x labels, prefer back/rear/environment
-                    const ultraRegex = /ultra|ultrawide|0\.5x|0.5x|0\.3x|0.3x|wideangle|wide angle|ultra wide/i;
-                    const backRegex = /back|rear|environment|main/i;
-                    let candidate = devices.find(d=> ultraRegex.test(d.label) && backRegex.test(d.label));
-                    if(!candidate) candidate = devices.find(d=> ultraRegex.test(d.label));
-                    // fallback: pick last device that is not front if nothing else
-                    if(!candidate) candidate = devices.find(d=> backRegex.test(d.label)) || devices[devices.length-1];
-                    if(!candidate){ setPermHint('Could not find an ultrawide camera on this device.', '#b91c1c'); return; }
-                    // restart using the candidate device id
-                    stopCameraScan(); await new Promise(r=>setTimeout(r,160)); await startCameraScan({forceDeviceId: candidate.deviceId});
-                    setPermHint('Requested ultrawide camera.', '#059669');
-                }catch(err){ console.warn('force-ultra error', err); setPermHint('Force Ultra failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
-            }}
+            // (Removed manual Force buttons — default selection now prefers ultrawide back camera)
 
             // Keep capture and scan canvases in sync with video size on resize/orientation changes
             function syncCanvasSizes(){
