@@ -1,4 +1,4 @@
-<!doctype html>
+ product so i can change the price after add ing it <!doctype html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
@@ -10,8 +10,8 @@
         <meta name="apple-mobile-web-app-title" content="Barcode App">
         <link rel="apple-touch-icon" href="icon-192.png">
         <style>
-            :root{--bg:#f6f7fb;--header:#3b82f6;--panel:#ffffff;--text:#111;--muted:#666}
-            .dark-mode{--bg:#0f1720;--header:#9e0909;--panel:#ffffff;--text:#e6eef6;--muted:#98a6b3}
+            :root{--bg:#f6f7fb;--header:#132b52;--panel:#ffffff;--text:#111;--muted:#666}
+            .dark-mode{--bg:#0f1720;--header:#17213f;--panel:#ffffff;--text:#e6eef6;--muted:#98a6b3}
             body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
             header{padding:12px 16px;background:var(--header);color:white}
             .wrap{max-width:980px;margin:18px auto;padding:12px}
@@ -76,6 +76,11 @@
                 <button class="tab" id="tab-products">Products</button>
             </div>
 
+            <div id="undo-toast" style="display:none;margin:10px 0;padding:10px;border-radius:6px;background:#fff3cd;border:1px solid #ffeeba;display:flex;align-items:center;gap:8px">
+                <div id="undo-text" style="flex:1;color:#664d03"></div>
+                <button id="undo-btn" style="padding:6px 10px">Undo</button>
+            </div>
+
             <div id="panel-generate" class="panel">
                 <div class="grid">
                     <div>
@@ -91,11 +96,16 @@
                         <label for="pprice">Price</label>
                         <input id="pprice" placeholder="Price (e.g. 9.99)">
 
+                        <label for="purl">Product URL (optional)</label>
+                        <input id="purl" placeholder="https://example.com/product-page">
+
                         <label for="pcode">Barcode value (optional)</label>
                         <input id="pcode" placeholder="Leave empty to auto-generate numeric code">
 
                         <label for="pimage">Image (optional)</label>
                         <input id="pimage" type="file" accept="image/*">
+
+                        <div id="image-preview" style="margin-top:8px;display:none"><strong>Image preview</strong><div style="margin-top:6px"><img id="image-preview-img" src="" class="thumb"></div></div>
 
                         <div style="margin-top:10px" class="actions">
                             <button id="btn-generate">Generate Barcode</button>
@@ -195,6 +205,9 @@
             const pcode = document.getElementById('pcode');
             const pimage = document.getElementById('pimage');
             const pprice = document.getElementById('pprice');
+            const purl = document.getElementById('purl');
+            const imagePreview = document.getElementById('image-preview');
+            const imagePreviewImg = document.getElementById('image-preview-img');
             const btnGenerate = document.getElementById('btn-generate');
             const btnSave = document.getElementById('btn-save');
             const btnDownload = document.getElementById('btn-download');
@@ -214,6 +227,9 @@
 
             let products = [];
             let currentBarcodeValue = '';
+            let editingOriginalCode = null;
+            let lastDeleted = null;
+            let undoTimeoutId = null;
             let codeReader = null;
             let selectedImageBase64 = null;
             let scanningPaused = false;
@@ -328,12 +344,58 @@
                 if(!products.length){productsList.innerHTML='<div class="hint">No products yet.</div>';return}
                 products.slice().reverse().forEach((p,idx)=>{
                     const el=document.createElement('div');el.className='product';
-                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
+                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.url?'<div style="margin-top:6px"><a href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener">Open product page</a></div>':''}</div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-edit">Edit</button><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
                     productsList.appendChild(el);
                 });
                 // attach handlers
-                document.querySelectorAll('.btn-delete').forEach(btn=>btn.onclick=(e)=>{const c=e.target.dataset.code;products=products.filter(p=>p.code!==c);saveProducts();});
+                document.querySelectorAll('.btn-delete').forEach(btn=>btn.onclick=(e)=>{const c=e.target.dataset.code; deleteProductByCode(c); });
                 document.querySelectorAll('.btn-copy').forEach(btn=>btn.onclick=(e)=>{navigator.clipboard?.writeText(e.target.dataset.code);alert('Copied '+e.target.dataset.code)});
+                document.querySelectorAll('.btn-edit').forEach(btn=>btn.onclick=(e)=>{ const code=e.target.dataset.code; startEditProduct(code); });
+            }
+
+            // Delete with undo support
+            const undoToast = document.getElementById('undo-toast');
+            const undoText = document.getElementById('undo-text');
+            const undoBtn = document.getElementById('undo-btn');
+
+            function showUndoToast(item){
+                lastDeleted = { item, ts: Date.now() };
+                undoText.textContent = `Deleted "${item.name || item.code}"`;
+                if(undoToast) undoToast.style.display = 'flex';
+                if(undoTimeoutId) clearTimeout(undoTimeoutId);
+                undoTimeoutId = setTimeout(()=>{ hideUndoToast(); lastDeleted = null; }, 6000);
+            }
+            function hideUndoToast(){ if(undoToast) undoToast.style.display = 'none'; if(undoTimeoutId){ clearTimeout(undoTimeoutId); undoTimeoutId = null; } }
+            if(undoBtn) undoBtn.onclick = ()=>{ if(lastDeleted){ products.push(lastDeleted.item); saveProducts(); lastDeleted = null; hideUndoToast(); } };
+
+            function deleteProductByCode(code){
+                const idx = products.findIndex(p=>p.code==code);
+                if(idx === -1) return;
+                const [removed] = products.splice(idx,1);
+                saveProducts();
+                showUndoToast(removed);
+            }
+
+            // Start editing a product: populate Generate form with product data
+            function startEditProduct(code){
+                const p = products.find(x=>x.code==code);
+                if(!p){ alert('Product not found'); return; }
+                // switch to Generate tab
+                tabGenerate.click();
+                // populate form
+                pname.value = p.name || '';
+                pdesc.value = p.desc || '';
+                pstock.value = p.stock || '';
+                pprice.value = p.price || '';
+                purl.value = p.url || '';
+                pcode.value = p.code || '';
+                selectedImageBase64 = p.image || null;
+                // show image preview if present
+                try{ if(selectedImageBase64 && imagePreviewImg){ imagePreviewImg.src = selectedImageBase64; imagePreview.style.display = 'block'; } else { if(imagePreview) imagePreview.style.display = 'none'; } }catch(e){}
+                // render barcode preview
+                try{ JsBarcode(barcodeSvg, p.code, {format: 'CODE128', displayValue: true, width:2, height:60}); currentBarcodeValue = p.code; btnSave.disabled = false; btnDownload.disabled = false; }catch(e){}
+                // mark editing original code so save can replace correctly
+                editingOriginalCode = p.code;
             }
 
             function escapeHtml(s){if(!s) return ''; return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
@@ -354,18 +416,26 @@
                 const f=e.target.files[0];
                 if(!f) return selectedImageBase64=null;
                 const fr=new FileReader();
-                fr.onload=()=>{selectedImageBase64=fr.result};fr.readAsDataURL(f);
+                fr.onload=()=>{selectedImageBase64=fr.result; try{ if(imagePreviewImg){ imagePreviewImg.src = selectedImageBase64; imagePreview.style.display = 'block'; } }catch(e){} };
+                fr.readAsDataURL(f);
             }
 
             btnSave.onclick = ()=>{
                 if(!currentBarcodeValue){alert('Generate barcode first');return}
-                const obj={code:currentBarcodeValue,name:pname.value||'(no name)',desc:pdesc.value||'',stock:pstock.value||'',price:pprice.value||'',image:selectedImageBase64||null};
-                // avoid duplicates
+                const obj={code:currentBarcodeValue,name:pname.value||'(no name)',desc:pdesc.value||'',stock:pstock.value||'',price:pprice.value||'',image:selectedImageBase64||null, url: (purl && purl.value) ? purl.value.trim() : ''};
+                // if not editing an existing product and a product with same code exists, confirm overwrite
+                if(!editingOriginalCode){ const exists = products.find(p=>p.code===obj.code); if(exists){ if(!confirm('A product with this code already exists. Overwrite it?')) return; } }
+                // if editing an existing product, remove that original entry first (handles code changes)
+                if(editingOriginalCode){ products = products.filter(p => p.code !== editingOriginalCode); }
+                // also remove any existing product with the new code to avoid duplicates
                 products = products.filter(p=>p.code!==obj.code);
                 products.push(obj);
+                // clear editing state
+                editingOriginalCode = null;
                 saveProducts();
-                // clear form
-                pname.value='';pdesc.value='';pstock.value='';pcode.value='';pimage.value='';selectedImageBase64=null;currentBarcodeValue='';barcodeSvg.innerHTML='';btnSave.disabled=true;btnDownload.disabled=true;
+                // clear form and preview
+                pname.value='';pdesc.value='';pstock.value='';pcode.value='';pimage.value='';purl.value='';selectedImageBase64=null;currentBarcodeValue='';barcodeSvg.innerHTML='';btnSave.disabled=true;btnDownload.disabled=true;
+                if(imagePreview){ imagePreviewImg.src=''; imagePreview.style.display='none'; }
             }
 
             // download barcode PNG
@@ -752,19 +822,26 @@
                 const p = products.find(x=>x.code==value);
                 if(p){
                     // show product details and add-to-cart controls
-                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}
+                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.url?'<div style="margin-top:6px"><a href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener">Open product page</a></div>':''}${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}
                         <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
                             <label style="font-size:13px">Qty</label>
                             <input id="cart-qty" type="number" value="1" min="1" style="width:72px;padding:6px;border-radius:6px;border:1px solid #ddd">
                             <button id="btn-add-cart" style="padding:8px 10px">Add to cart</button>
                         </div>
                     </div>`;
-                    // wire add to cart
-                    setTimeout(()=>{
-                        const addBtn = document.getElementById('btn-add-cart');
-                        const qtyInput = document.getElementById('cart-qty');
-                        if(addBtn){ addBtn.onclick = ()=>{ const q = parseInt(qtyInput.value || '1', 10); addToCart(p.code, isNaN(q)?1:q); } }
-                    }, 20);
+                    // wire add to cart (attach handler immediately)
+                    const addBtn = document.getElementById('btn-add-cart');
+                    const qtyInput = document.getElementById('cart-qty');
+                    if(addBtn){
+                        addBtn.onclick = ()=>{
+                            try{
+                                const q = parseInt((qtyInput && qtyInput.value) || '1', 10);
+                                addToCart(p.code, isNaN(q)?1:q);
+                            }catch(err){ console.error('Add to cart failed', err); alert('Could not add to cart'); }
+                        };
+                    } else {
+                        console.warn('Add button not found in DOM');
+                    }
                 }else{
                     foundProduct.innerHTML = '<div class="hint">Product not found in database.</div>';
                 }
