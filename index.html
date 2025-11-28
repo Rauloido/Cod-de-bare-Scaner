@@ -26,6 +26,14 @@
             .scan-flash{position:absolute;inset:0;background:rgba(255,255,255,0.08);opacity:0;transition:opacity .18s ease}
             .scan-active .scan-flash{opacity:1}
             .row{display:flex;gap:12px;align-items:center}
+            /* mobile-optimized controls */
+            @media(max-width:600px){
+                .grid{grid-template-columns:1fr}
+                .tabs{flex-direction:row}
+                button.tab{flex:1;padding:14px}
+                .actions button{padding:10px 12px;font-size:15px}
+            }
+            .big{padding:12px 16px;border-radius:10px;font-size:16px}
             input,textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
             label{font-weight:600;margin-bottom:6px;display:block}
             .grid{display:grid;grid-template-columns:1fr 320px;gap:12px}
@@ -39,7 +47,10 @@
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
         <!-- ZXing for scanning (browser UMD) -->
         <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
-        <!-- SheetJS for Excel export/import -->
+        <!-- ExcelJS + FileSaver for exporting images into XLSX -->
+        <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+        <!-- SheetJS kept for imports -->
         <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     </head>
     <body>
@@ -173,10 +184,13 @@
             let currentBarcodeValue = '';
             let codeReader = null;
             let selectedImageBase64 = null;
+            let scanningPaused = false;
+            let lastScanned = {value:null, ts:0};
+            const SCAN_COOLDOWN = 1400; // ms
 
-            // Tabs
-            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'}
-            tabScan.onclick = ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none'}
+            // Tabs (switch panels and manage camera)
+            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
+            tabScan.onclick = ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none'; startCameraScan(); }
 
             // Load/save
             function loadProducts(){
@@ -259,14 +273,71 @@
                 return (t+rand).slice(-12);
             }
 
-            // Excel export
-            btnExport.onclick = ()=>{
-                if(!products.length){alert('No products to export');return}
-                const data = products.map(p=>({Code:p.code,Name:p.name,Description:p.desc,Stock:p.stock}));
-                const ws = XLSX.utils.json_to_sheet(data);
-                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Products');
-                XLSX.writeFile(wb,'products.xlsx');
-            }
+                        // Excel export with embedded barcode images using ExcelJS
+                        btnExport.onclick = async ()=>{
+                                if(!products.length){alert('No products to export');return}
+                                if(typeof ExcelJS === 'undefined'){alert('ExcelJS not loaded');return}
+
+                                const wb = new ExcelJS.Workbook();
+                                const ws = wb.addWorksheet('Products');
+                                ws.columns = [
+                                    {header:'Image', key:'img', width:18},
+                                    {header:'Code', key:'code', width:22},
+                                    {header:'Name', key:'name', width:30},
+                                    {header:'Description', key:'desc', width:40},
+                                    {header:'Stock', key:'stock', width:12}
+                                ];
+
+                                // helper: render a barcode SVG to PNG base64 (without prefix)
+                                const renderBarcodePngBase64 = (code)=>{
+                                    return new Promise((resolve)=>{
+                                        try{
+                                            const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+                                            JsBarcode(svg, code, {format:'CODE128', displayValue:false, width:2, height:60});
+                                            const svgData = new XMLSerializer().serializeToString(svg);
+                                            const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
+                                            const url = URL.createObjectURL(svgBlob);
+                                            const img = new Image();
+                                            img.onload = ()=>{
+                                                const canvas = document.createElement('canvas');
+                                                canvas.width = img.naturalWidth || 400;
+                                                canvas.height = img.naturalHeight || 120;
+                                                const ctx = canvas.getContext('2d');
+                                                ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+                                                ctx.drawImage(img,0,0);
+                                                const dataUrl = canvas.toDataURL('image/png');
+                                                URL.revokeObjectURL(url);
+                                                resolve(dataUrl.split(',')[1]);
+                                            };
+                                            img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+                                            img.src = url;
+                                        }catch(err){console.warn('renderBarcode failed',err); resolve(null)}
+                                    })
+                                };
+
+                                // add rows and images
+                                for(let i=0;i<products.length;i++){
+                                    const p = products[i];
+                                    const base64 = await renderBarcodePngBase64(p.code);
+                                    const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock});
+                                    // row index for ExcelJS is 1-based
+                                    if(base64){
+                                        try{
+                                            const imageId = wb.addImage({base64: base64, extension: 'png'});
+                                            // place the image in the first column for this row
+                                            ws.addImage(imageId, {tl:{col:0,row:row.number-1}, ext:{width:120, height:60}});
+                                            // set row height
+                                            ws.getRow(row.number).height = 45;
+                                        }catch(err){console.warn('addImage failed',err)}
+                                    }
+                                }
+
+                                // write workbook to buffer and save
+                                try{
+                                    const buf = await wb.xlsx.writeBuffer();
+                                    saveAs(new Blob([buf]), 'products.xlsx');
+                                }catch(err){console.error(err); alert('Export failed: '+err.message)}
+                        }
 
             btnImport.onclick = ()=> importFile.click();
             importFile.onchange = async (e)=>{
@@ -294,23 +365,28 @@
                 alert('Import complete');
             }
 
-            // Scanning
-            btnStartScan.onclick = async ()=>{
+            // Scanning - start/stop helpers with rear-camera preference and debounce
+            async function startCameraScan(){
                 btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
-                // use ZXing if available
+                scanningPaused = false; lastScanned = {value:null, ts:0};
                 try{
                     if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
-                    // list available devices via the reader instance
                     const devices = await codeReader.listVideoInputDevices();
-                    const deviceId = devices && devices.length ? devices[0].deviceId : undefined;
-                    // start decoding to the video element
+                    let preferred = undefined;
+                    if(devices && devices.length){
+                        preferred = devices.find(d=>/back|rear|environment|camera 1|cam_0/i.test(d.label)) || devices[devices.length-1] || devices[0];
+                    }
+                    const deviceId = preferred ? preferred.deviceId : undefined;
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
                             const text = result.getText();
+                            const now = Date.now();
+                            if(scanningPaused) return;
+                            if(lastScanned.value === text && (now - lastScanned.ts) < SCAN_COOLDOWN) return;
+                            lastScanned = {value:text, ts:now};
+                            scanningPaused = true; setTimeout(()=>{scanningPaused=false}, SCAN_COOLDOWN);
                             resultText.textContent = text;
-                            // visual flash
-                            const flash = document.getElementById('scan-flash');
-                            if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
+                            const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
                             onBarcodeScanned(text);
                         }
                         if(err && !(err instanceof ZXing.NotFoundException)){
@@ -319,7 +395,6 @@
                     });
                 }catch(e){
                     console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
-                    // fallback: try BarcodeDetector API
                     try{
                         const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
                         video.srcObject = stream; await video.play();
@@ -331,7 +406,7 @@
                                 if(detector){
                                     const barcodes = await detector.detect(video);
                                     if(barcodes.length){
-                                        const v = barcodes[0].rawValue; resultText.textContent=v; const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                        const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
                                     }
                                 }
                             }catch(err){console.warn(err)}
@@ -342,15 +417,16 @@
                 }
             }
 
-            btnStopScan.onclick = ()=>{
+            function stopCameraScan(){
                 btnStartScan.disabled = false; btnStopScan.disabled = true; resultText.textContent='';
-                if(codeReader){
-                    try{ codeReader.reset(); }catch(e){console.warn(e)}
-                }
-                if(video && video.srcObject){
-                    const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null;
-                }
+                if(codeReader){ try{ codeReader.reset(); }catch(e){console.warn(e)} }
+                if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null; }
+                scanningPaused = false; lastScanned = {value:null, ts:0};
             }
+
+            // bind buttons
+            btnStartScan.onclick = startCameraScan;
+            btnStopScan.onclick = stopCameraScan;
 
             function onBarcodeScanned(value){
                 const p = products.find(x=>x.code==value);
