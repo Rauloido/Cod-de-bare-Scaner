@@ -206,6 +206,25 @@
             const scanCanvas = document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d');
 
+            // ZXing decode hints helper: prefer common linear barcode formats (can be adjusted)
+            function getZXingHints(){
+                if(typeof ZXing === 'undefined' || !ZXing.DecodeHintType) return undefined;
+                try{
+                    const hints = new Map();
+                    const fmts = [
+                        ZXing.BarcodeFormat.CODE_128,
+                        ZXing.BarcodeFormat.EAN_13,
+                        ZXing.BarcodeFormat.EAN_8,
+                        ZXing.BarcodeFormat.UPC_A,
+                        ZXing.BarcodeFormat.UPC_E,
+                        ZXing.BarcodeFormat.CODE_39,
+                        ZXing.BarcodeFormat.ITF
+                    ];
+                    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmts);
+                    return hints;
+                }catch(e){ return undefined; }
+            }
+
             // Dark mode toggle
             const btnDark = document.getElementById('btn-darkmode');
             function applyDarkMode(enabled){
@@ -456,7 +475,9 @@
                 try{
                     // reset any previous reader to avoid freezing when switching cameras
                     try{ if(codeReader) { codeReader.reset(); } }catch(e){ console.warn('reset reader', e); }
-                    codeReader = new ZXing.BrowserMultiFormatReader();
+                    // create reader with format hints to bias decoding towards common linear symbologies
+                    const hints = getZXingHints();
+                    codeReader = new ZXing.BrowserMultiFormatReader(hints);
                     video.setAttribute('playsinline', '');
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
@@ -574,9 +595,15 @@
             const captureCtx = captureCanvas.getContext('2d');
             let frozen = false;
 
-            // Capture (freeze) current frame and try immediate decode
+            // Capture button: if camera not running, start scanner; otherwise freeze frame and try immediate decode
             btnCapture.onclick = async ()=>{
-                if(!video.srcObject){ alert('Camera not started'); return; }
+                // if camera not started, request permission and start scanning
+                if(!video.srcObject){
+                    const ok = await requestCameraPermission();
+                    if(!ok){ return; }
+                    await startCameraScan();
+                    return;
+                }
                 // draw current frame into capture canvas sized to video pixel size
                 const vw = video.videoWidth || video.clientWidth;
                 const vh = video.videoHeight || video.clientHeight;
@@ -619,7 +646,7 @@
                     img.src = dataUrl;
                     await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
                     // create a fresh reader for image decode to avoid interfering with live reader
-                    const reader = new ZXing.BrowserMultiFormatReader();
+                    const reader = new ZXing.BrowserMultiFormatReader(getZXingHints());
                     if(typeof reader.decodeFromImageElement === 'function'){
                         const resObj = await reader.decodeFromImageElement(img);
                         if(resObj && resObj.getText) return resObj.getText();
