@@ -836,16 +836,24 @@
                         addBtn.onclick = ()=>{
                             try{
                                 const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
-                                const qty = isNaN(q) ? 1 : q;
-                                console.log('Add-to-cart clicked', {code: p && p.code, qty, product: p});
-                                // defensive: ensure cart exists
-                                if(!window.cart) window.cart = [];
-                                const ok = addToCart(p.code, qty);
-                                if(!ok) {
-                                    console.error('addToCart returned false', {code: p && p.code});
-                                    alert('Could not add to cart (product missing or internal error). Check console for details.');
-                                }
-                            }catch(err){ console.error('Add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
+                                const qty = isNaN(q) ? 1 : qtyInput ? Math.max(1, q) : 1;
+                                console.log('Add-to-cart clicked (inline)', {code: p && p.code, qty, product: p});
+                                // ensure cart exists
+                                if(!Array.isArray(cart)) cart = [];
+                                // simple add: increment if exists, otherwise push
+                                const existing = cart.find(c=>c.code==p.code);
+                                if(existing){ existing.qty = (existing.qty||0) + qty; }
+                                else { cart.push({code: p.code, name: p.name, desc: p.desc, price: p.price||0, qty: qty}); }
+                                saveCart();
+                                // show quick inline confirmation in foundProduct area
+                                try{
+                                    const note = document.createElement('div'); note.style.marginTop='8px'; note.style.color='#059669'; note.textContent = `Added ${qty} × ${p.name || p.code} to cart`;
+                                    foundProduct.appendChild(note);
+                                    setTimeout(()=>{ try{ note.remove(); }catch(e){} }, 2500);
+                                }catch(e){ console.warn(e); }
+                                // scroll cart into view so user sees update
+                                try{ const cartListEl = document.getElementById('cart-list'); if(cartListEl) cartListEl.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+                            }catch(err){ console.error('Inline add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
                         };
                     } else {
                         console.warn('Add button not found in DOM');
