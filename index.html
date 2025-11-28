@@ -837,9 +837,13 @@
                             try{
                                 const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
                                 const qty = isNaN(q) ? 1 : q;
+                                console.log('Add-to-cart clicked', {code: p && p.code, qty, product: p});
+                                // defensive: ensure cart exists
+                                if(!window.cart) window.cart = [];
                                 const ok = addToCart(p.code, qty);
                                 if(!ok) {
-                                    alert('Could not add to cart');
+                                    console.error('addToCart returned false', {code: p && p.code});
+                                    alert('Could not add to cart (product missing or internal error). Check console for details.');
                                 }
                             }catch(err){ console.error('Add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
                         };
@@ -881,9 +885,11 @@
             }
             function addToCart(code, qty){
                 try{
-                    const p = products.find(x=>x.code==code);
-                    if(!p){ alert('Product not found'); return false; }
-                    const existing = cart.find(c=>c.code==code);
+                    // ensure cart array exists
+                    if(!Array.isArray(cart)) cart = [];
+                    const p = products.find(x=>x.code==code || x.code===code);
+                    if(!p){ console.warn('addToCart: product not found for code', code); return false; }
+                    const existing = cart.find(c=>c.code==code || c.code===code);
                     if(existing){ existing.qty = (existing.qty||0) + (qty||1); }
                     else { cart.push({code:p.code, name:p.name, desc:p.desc, price:p.price||0, qty: qty||1}); }
                     saveCart();
