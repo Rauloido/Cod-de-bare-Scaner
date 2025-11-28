@@ -455,7 +455,10 @@
                 btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
                 scanningPaused = false; lastScanned = {value:null, ts:0};
                 try{
-                    if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+                    // reset any previous reader to avoid freezing when switching cameras
+                    try{ if(codeReader) { codeReader.reset(); } }catch(e){ console.warn('reset reader', e); }
+                    codeReader = new ZXing.BrowserMultiFormatReader();
+                    video.setAttribute('playsinline', '');
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
@@ -469,6 +472,7 @@
                                                 cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
                                         }
                                         const deviceId = cameraSelect.value || (preferred ? preferred.deviceId : undefined);
+                    // start ZXing decode on the chosen device
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
                             const text = result.getText();
@@ -491,7 +495,8 @@
                         // request a stream with the selected device if available, otherwise prefer environment
                         const constraints = cameraSelect && cameraSelect.value ? {video:{deviceId:{exact: cameraSelect.value}}} : {video:{facingMode:'environment'}};
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                        video.srcObject = stream; await video.play();
+                        // attach stream and ensure playsinline for mobile
+                        video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
                         const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
                         if(!detector){console.warn('No BarcodeDetector available.');}
                         const scanLoop = async ()=>{
@@ -632,6 +637,35 @@
                     setTimeout(()=>startCameraScan(),200);
                 }catch(err){ console.warn(err); alert('Focus request failed: '+err.message); }
             };
+
+            // When user changes camera selection, restart the scan cleanly
+            cameraSelect.onchange = async ()=>{
+                try{
+                    // if we have a running stream/reader, stop it first
+                    stopCameraScan();
+                    // small delay to ensure tracks are stopped on some devices
+                    await new Promise(r=>setTimeout(r,120));
+                    // start with the newly selected device
+                    await startCameraScan();
+                }catch(err){ console.warn('camera change error', err); }
+            };
+
+            // Keep capture and scan canvases in sync with video size on resize/orientation changes
+            function syncCanvasSizes(){
+                try{
+                    const vw = video.videoWidth || video.clientWidth || 640;
+                    const vh = video.videoHeight || video.clientHeight || 480;
+                    // adjust visible capture canvas (overlay) size styles
+                    const overlay = document.getElementById('capture-canvas');
+                    if(overlay){ overlay.width = vw; overlay.height = vh; }
+                    // keep our internal scanCanvas roughly matching video size
+                    if(scanCanvas){ scanCanvas.width = Math.floor(vw * 0.8); scanCanvas.height = Math.floor(vh * 0.36); }
+                }catch(e){ /* ignore */ }
+            }
+            window.addEventListener('resize', ()=>{ syncCanvasSizes(); });
+            window.addEventListener('orientationchange', ()=>{ setTimeout(syncCanvasSizes, 220); });
+            // also sync when video metadata loads
+            video.addEventListener('loadedmetadata', ()=>{ syncCanvasSizes(); });
 
             function onBarcodeScanned(value){
                 const p = products.find(x=>x.code==value);
