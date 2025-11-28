@@ -462,12 +462,25 @@
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
+                                                // helper: choose preferred device favoring "1x" / wide back camera and avoid ultrawide/tele
+                                                const choosePreferredDevice = (devs)=>{
+                                                    const preferRegex = /(\b1x\b|\bwide\b|\bback\b|\brear\b|environment|primary)/i;
+                                                    const avoidRegex = /ultra|ultrawide|tele|2x|0\.5x|0\.3x|front|selfie/i;
+                                                    // try explicit 1x or wide back camera
+                                                    let p = devs.find(d=> preferRegex.test(d.label) && !avoidRegex.test(d.label));
+                                                    if(p) return p;
+                                                    // otherwise pick any that doesn't match avoid list
+                                                    p = devs.find(d=> !avoidRegex.test(d.label));
+                                                    if(p) return p;
+                                                    // fallback to last or first
+                                                    return devs[devs.length-1] || devs[0];
+                                                };
                                                 // populate camera select
                                                 cameraSelect.innerHTML = '';
-                                                devices.forEach(d=>{
-                                                    const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (cameraSelect.length+1)); cameraSelect.appendChild(opt);
+                                                devices.forEach((d, i)=>{
+                                                    const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt);
                                                 });
-                                                preferred = devices.find(d=>/back|rear|environment|camera 1|cam_0/i.test(d.label)) || devices[devices.length-1] || devices[0];
+                                                preferred = choosePreferredDevice(devices);
                                                 cameraSelect.value = preferred.deviceId;
                                                 cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
                                         }
@@ -611,7 +624,7 @@
                 }
             };
 
-            // Focus button: best-effort applyConstraints to request autofocus
+            // Focus button: best-effort applyConstraints to request autofocus without restarting camera
             btnFocus.onclick = async ()=>{
                 if(!video.srcObject){ alert('Camera not started'); return; }
                 try{
@@ -619,23 +632,25 @@
                     if(!track){ alert('No video track'); return; }
                     const caps = track.getCapabilities ? track.getCapabilities() : {};
                     if(caps.focusMode){
-                        await track.applyConstraints({advanced:[{focusMode: 'continuous'}]});
-                        alert('Requested continuous focus (if supported).');
+                        try{
+                            await track.applyConstraints({advanced:[{focusMode: 'continuous'}]});
+                            setPermHint('Requested continuous focus (if supported).', '#059669');
+                        }catch(e){ console.warn('focus applyConstraints failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
                         return;
                     }
                     if(caps.focusDistance){
-                        const min = caps.focusDistance.min || 0;
-                        const max = caps.focusDistance.max || min;
-                        const mid = (min+max)/2;
-                        await track.applyConstraints({advanced:[{focusDistance: mid}]});
-                        alert('Requested focus distance (if supported).');
+                        try{
+                            const min = (caps.focusDistance && typeof caps.focusDistance.min === 'number') ? caps.focusDistance.min : 0;
+                            const max = (caps.focusDistance && typeof caps.focusDistance.max === 'number') ? caps.focusDistance.max : min;
+                            const mid = (min+max)/2;
+                            await track.applyConstraints({advanced:[{focusDistance: mid}]});
+                            setPermHint('Requested focus distance (if supported).', '#059669');
+                        }catch(e){ console.warn('focus distance apply failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
                         return;
                     }
-                    // attempt a quick restart to trigger autofocus on some devices
-                    alert('Auto-focus not directly supported; restarting camera to trigger AF');
-                    stopCameraScan();
-                    setTimeout(()=>startCameraScan(),200);
-                }catch(err){ console.warn(err); alert('Focus request failed: '+err.message); }
+                    // If neither capability present, inform user but do NOT restart the camera (restart caused freezes on some devices)
+                    setPermHint('Auto-focus not directly supported via browser APIs on this device. Try moving camera closer/further.', '#b91c1c');
+                }catch(err){ console.warn(err); setPermHint('Focus request failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
             };
 
             // When user changes camera selection, restart the scan cleanly
