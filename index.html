@@ -11,16 +11,16 @@
         <link rel="apple-touch-icon" href="icon-192.png">
         <style>
             :root{--bg:#f6f7fb;--header:#3b82f6;--panel:#ffffff;--text:#111;--muted:#666}
-            .dark-mode{--bg:#0f1720;--header:#9e0909;--panel:#ffffff;--text:#e6eef6;--muted:#98a6b3}
+            .dark-mode{--bg:#0f1720;--header:#9e0909;--panel:#26323f;--text:#e6eef6;--muted:#98a6b3}
             body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
             header{padding:12px 16px;background:var(--header);color:white}
             .wrap{max-width:980px;margin:18px auto;padding:12px}
             .tabs{display:flex;gap:8px;margin-bottom:12px}
-            button.tab{padding:10px 14px;border:1px solid rgba(0,0,0,0.06);background:var(--panel);border-radius:6px}
+            button.tab{padding:10px 14px;border:1px solid rgba(0,0,0,0.06);background:var(--panel);border-radius:6px;color:var(--text)}
             button.tab.active{background:#111;color:white}
             .panel{background:var(--panel);padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06)}
             /* scanner overlay */
-            .scanner-wrap{position:relative;border-radius:8px;overflow:hidden}
+            .scanner-wrap{position:relative;border-radius:8px;overflow:hidden;background:#000}
             .scanner-wrap video{display:block;width:100%;height:100%;object-fit:cover;background:#000}
             .scanner-overlay{position:absolute;inset:0;pointer-events:none}
             .scanner-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80%;height:36%;border:2px dashed rgba(255,255,255,0.6);box-shadow:0 0 0 9999px rgba(0,0,0,0.25) inset;border-radius:8px}
@@ -35,25 +35,33 @@
                 button.tab{flex:1;padding:14px}
                 .actions button{padding:10px 12px;font-size:15px}
             }
-            .big{padding:12px 16px;border-radius:10px;font-size:16px}
+            .big{padding:12px 16px;border-radius:10px;font-size:16px;border:none}
             input,textarea{width:100%;padding:8px;border:1px solid rgba(0,0,0,0.06);border-radius:6px;background:transparent;color:var(--text)}
-            label{font-weight:600;margin-bottom:6px;display:block}
+            label{font-weight:600;margin-bottom:6px;display:block;margin-top:12px}
+            label:first-child{margin-top:0}
             .grid{display:grid;grid-template-columns:1fr 320px;gap:12px}
-            img.thumb{max-width:100%;border-radius:6px;border:1px solid rgba(0,0,0,0.06)}
+            img.thumb{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;}
             .product{border-bottom:1px solid rgba(0,0,0,0.06);padding:8px 0}
             .actions{display:flex;gap:8px}
             small.hint{color:var(--muted)}
             footer{padding:14px;text-align:center;color:var(--muted)}
             #insecure-warning{background:#ffefef;color:#801010;padding:10px;border-radius:6px;margin-bottom:12px;border:1px solid #ffd6d6}
+            #perm-hint{margin-top:8px;color:#8b5cf6;font-weight:600}
+            /* styles for buttons in generate/scan mode */
+            #panel-generate button, #panel-scan button {
+                background: var(--header);
+                color: white;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+            #panel-generate button:hover, #panel-scan button:hover {
+                filter: brightness(1.1);
+            }
         </style>
-        <!-- Barcode generator -->
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-        <!-- ZXing for scanning (browser UMD) -->
         <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
-        <!-- ExcelJS + FileSaver for exporting images into XLSX -->
         <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-        <!-- SheetJS kept for imports -->
         <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     </head>
     <body>
@@ -61,58 +69,58 @@
             <div style="max-width:980px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
                 <div><strong>Barcode Generator & Scanner</strong></div>
                 <div style="display:flex;gap:10px;align-items:center">
-                  <div style="font-size:13px;opacity:.95">Two modes: Generate ↔ Scan • Works on phones</div>
+                  <div style="font-size:13px;opacity:.95">Două moduri: Generează ↔ Scanează • Funcționează pe telefoane</div>
                   <button id="btn-darkmode" title="Toggle dark mode" style="padding:6px 10px;border-radius:6px;border:none;background:rgba(255,255,255,0.15);color:white">Dark</button>
                 </div>
             </div>
         </header>
         <main class="wrap">
             <div id="insecure-warning" style="display:none">
-                <strong>Camera blocked:</strong> This page must be served over HTTPS (for example, via GitHub Pages) or from <code>localhost</code> for camera access. Deploy to GitHub Pages or serve over HTTPS to enable camera permissions.
+                <strong>Camera blocată:</strong> Această pagină trebuie să fie servită prin **HTTPS** (de exemplu, via GitHub Pages) sau de la `localhost` pentru a permite accesul la cameră. Implementați pe GitHub Pages sau utilizați HTTPS pentru a activa permisiunile camerei.
             </div>
             <div class="tabs">
-                <button class="tab active" id="tab-generate">Generate</button>
-                <button class="tab" id="tab-scan">Scan</button>
+                <button class="tab active" id="tab-generate">✨ Generează Cod</button>
+                <button class="tab" id="tab-scan">🔍 Scanează Cod</button>
             </div>
 
             <div id="panel-generate" class="panel">
                 <div class="grid">
                     <div>
-                        <label for="pname">Name</label>
-                        <input id="pname" placeholder="Product name">
+                        <label for="pname">Nume Produs</label>
+                        <input id="pname" placeholder="Nume Produs">
 
-                        <label for="pdesc">Description</label>
-                        <textarea id="pdesc" rows="3" placeholder="Short description"></textarea>
+                        <label for="pdesc">Descriere</label>
+                        <textarea id="pdesc" rows="3" placeholder="Scurtă descriere"></textarea>
 
-                        <label for="pstock">Stock / Number</label>
-                        <input id="pstock" placeholder="Quantity or SKU number">
+                        <label for="pstock">Număr Stoc (SKU / Referință)</label>
+                        <input id="pstock" placeholder="Cantitate sau număr SKU">
 
-                        <label for="pcode">Barcode value (optional)</label>
-                        <input id="pcode" placeholder="Leave empty to auto-generate numeric code">
+                        <label for="pcode">Valoare Cod de Bare (Opțional)</label>
+                        <input id="pcode" placeholder="Lăsați gol pentru a genera un cod numeric automat">
 
-                        <label for="pimage">Image (optional)</label>
+                        <label for="pimage">Imagine Produs (Opțional)</label>
                         <input id="pimage" type="file" accept="image/*">
 
                         <div style="margin-top:10px" class="actions">
-                            <button id="btn-generate">Generate Barcode</button>
-                            <button id="btn-save" disabled>Save Product</button>
+                            <button id="btn-generate">Generează Cod de Bare</button>
+                            <button id="btn-save" disabled>Salvează Produs</button>
                         </div>
 
-                        <div style="margin-top:10px">
+                        <div style="margin-top:10px;text-align:center">
                             <svg id="barcode"></svg>
                         </div>
 
                         <div style="margin-top:8px">
-                            <button id="btn-download" disabled>Download Barcode PNG</button>
+                            <button id="btn-download" disabled>Descarcă Cod de Bare (PNG)</button>
                         </div>
                     </div>
 
                     <div>
                         <div style="display:flex;justify-content:space-between;align-items:center">
-                            <strong>Products</strong>
+                            <strong>Produse Salvate</strong>
                             <div class="actions">
-                                <button id="btn-export">Export Excel</button>
-                                <button id="btn-import">Import Excel</button>
+                                <button id="btn-export">Exportă Excel</button>
+                                <button id="btn-import">Importă Excel</button>
                                 <input id="import-file" type="file" accept=".xlsx,.xls,.csv" style="display:none">
                             </div>
                         </div>
@@ -124,15 +132,16 @@
 
             <div id="panel-scan" class="panel" style="display:none">
                 <div style="display:flex;gap:12px;flex-direction:column">
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <button id="btn-start-scan">Start Camera Scan</button>
-                        <button id="btn-stop-scan" disabled>Stop</button>
-                        <button id="btn-capture" title="Freeze frame and attempt decode">Capture</button>
-                        <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
-                        <!-- camera selection removed (app will prefer ultrawide back camera by default) -->
-                        <small class="hint">Tip: allow camera, align barcode with the red line</small>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button id="btn-start-scan" class="big">Start Camera Scan</button>
+                        <button id="btn-stop-scan" disabled class="big">Stop</button>
+                        <button id="btn-focus" title="Încearcă să setezi focalizarea automată continuă" class="big">Focus</button> 
+                        <button id="btn-capture" title="Îngheață imaginea și încearcă decodarea" class="big">Capture</button>
+                        <button id="btn-resume" style="display:none" title="Reia scanarea live" class="big">✕ Reia</button>
                     </div>
-                    <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
+                    <small class="hint">Sfat: Aliniați codul de bare cu linia roșie, asigurați-vă că este lumină bună.</small>
+                    
+                    <div id="perm-hint"></div>
 
                     <div class="scanner-wrap" style="height:420px">
                         <video id="video" playsinline></video>
@@ -146,11 +155,11 @@
 
                     <div id="scan-result" style="display:flex;gap:12px;align-items:flex-start">
                         <div style="flex:1">
-                            <strong>Result</strong>
-                            <div id="result-text" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fafafa;min-height:70px"></div>
+                            <strong>Rezultat Scanare</strong>
+                            <div id="result-text" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fafafa;min-height:70px;word-wrap:break-word;"></div>
                         </div>
                         <div style="width:260px">
-                            <strong>Found product</strong>
+                            <strong>Produs Găsit (Inventar)</strong>
                             <div id="found-product" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fff;min-height:70px"></div>
                         </div>
                     </div>
@@ -158,7 +167,7 @@
             </div>
 
             <footer>
-                <div><small class="hint">To add to iPhone home screen: open in Safari → Share → Add to Home Screen.</small></div>
+                <div><small class="hint">Pentru a adăuga pe ecranul principal iPhone: deschideți în Safari → Partajați → Adăugați la ecranul principal.</small></div>
             </footer>
         </main>
 
@@ -191,6 +200,12 @@
             const video = document.getElementById('video');
             const btnStartScan = document.getElementById('btn-start-scan');
             const btnStopScan = document.getElementById('btn-stop-scan');
+            const btnCapture = document.getElementById('btn-capture');
+            const btnResume = document.getElementById('btn-resume');
+            const btnFocus = document.getElementById('btn-focus'); // Noul buton Focus
+            const captureCanvas = document.getElementById('capture-canvas');
+            const captureCtx = captureCanvas.getContext('2d');
+
             const resultText = document.getElementById('result-text');
             const foundProduct = document.getElementById('found-product');
 
@@ -199,14 +214,15 @@
             let codeReader = null;
             let selectedImageBase64 = null;
             let scanningPaused = false;
+            let frozen = false;
             let lastScanned = {value:null, ts:0};
-            const SCAN_COOLDOWN = 1400; // ms
-            const cameraSelect = document.getElementById('camera-select'); // may be null now (select removed)
+            const SCAN_COOLDOWN = 1400; // ms debounce
+
             // hidden canvas to crop video center for scanning (improves detection reliability)
             const scanCanvas = document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d');
 
-            // ZXing decode hints helper: prefer common linear barcode formats (can be adjusted)
+            // ZXing decode hints helper: prefer common linear barcode formats
             function getZXingHints(){
                 if(typeof ZXing === 'undefined' || !ZXing.DecodeHintType) return undefined;
                 try{
@@ -232,10 +248,9 @@
                 localStorage.setItem('dark-mode', enabled? '1':'0');
             }
             btnDark.onclick = ()=>{ const on = !(localStorage.getItem('dark-mode')==='1'); applyDarkMode(on); btnDark.textContent = on? 'Light':'Dark'; };
-            // apply saved preference
             if(localStorage.getItem('dark-mode')==='1'){ applyDarkMode(true); btnDark.textContent='Light'; }
 
-            // insecure origin check (show a short message; user will deploy to GitHub Pages)
+            // insecure origin check
             const insecureWarning = document.getElementById('insecure-warning');
             const isSecureContext = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
             if(!isSecureContext){ insecureWarning.style.display = 'block'; }
@@ -244,32 +259,25 @@
             const permHint = document.getElementById('perm-hint');
             function setPermHint(msg, color){ if(!permHint) return; permHint.textContent = msg; if(color) permHint.style.color = color; }
 
-            // Request camera permission proactively and return true if granted
+            // Request camera permission proactively
             async function requestCameraPermission(){
                 if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-                    setPermHint('Camera not supported by this browser.', '#d97706');
-                    return false;
+                    setPermHint('Camera not supported by this browser.', '#d97706'); return false;
                 }
-                // If insecure origin, warn and don't try (permission will be blocked)
-                if(!(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')){
-                    setPermHint('Page not served over HTTPS — camera permission will be blocked. Deploy to GitHub Pages or use HTTPS.', '#b91c1c');
-                    return false;
+                if(!isSecureContext){
+                    setPermHint('Page not served over HTTPS — camera permission will be blocked. Deploy to GitHub Pages or use HTTPS.', '#b91c1c'); return false;
                 }
                 try{
-                    // Try Permissions API first for a quick check
                     if(navigator.permissions && navigator.permissions.query){
                         try{
                             const p = await navigator.permissions.query({name: 'camera'});
                             if(p.state === 'granted'){ setPermHint('Camera permission already granted.', '#059669'); return true; }
                             if(p.state === 'denied'){ setPermHint('Camera permission was denied. Enable camera access in browser settings.', '#b91c1c'); return false; }
-                            // if 'prompt', we'll request below
-                        }catch(e){ /* some browsers don't support name:'camera' */ }
+                        }catch(e){ /* ignored */ }
                     }
 
-                    // Request a minimal video stream to trigger permission prompt
                     setPermHint('Requesting camera permission...', '#0ea5e9');
                     const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-                    // got permission; immediately stop tracks since caller will reopen properly
                     stream.getTracks().forEach(t=>t.stop());
                     setPermHint('Camera permission granted. You can start scanning.', '#059669');
                     return true;
@@ -289,9 +297,8 @@
             // Tabs (switch panels and manage camera)
             tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
             tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';
-                // proactively request permission so browser shows prompt immediately
                 const ok = await requestCameraPermission();
-                if(ok){ startCameraScan(); }else{ /* permission not granted or blocked; user will see guidance in UI */ }
+                if(ok){ startCameraScan(); }
             }
 
             // Load/save
@@ -309,11 +316,11 @@
                 if(!products.length){productsList.innerHTML='<div class="hint">No products yet.</div>';return}
                 products.slice().reverse().forEach((p,idx)=>{
                     const el=document.createElement('div');el.className='product';
-                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
+                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:var(--muted)">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
                     productsList.appendChild(el);
                 });
                 // attach handlers
-                document.querySelectorAll('.btn-delete').forEach(btn=>btn.onclick=(e)=>{const c=e.target.dataset.code;products=products.filter(p=>p.code!==c);saveProducts();});
+                document.querySelectorAll('.btn-delete').forEach(btn=>btn.onclick=(e)=>{if(confirm('Are you sure you want to delete product with code '+e.target.dataset.code+'?')){const c=e.target.dataset.code;products=products.filter(p=>p.code!==c);saveProducts();}});
                 document.querySelectorAll('.btn-copy').forEach(btn=>btn.onclick=(e)=>{navigator.clipboard?.writeText(e.target.dataset.code);alert('Copied '+e.target.dataset.code)});
             }
 
@@ -375,76 +382,75 @@
                 return (t+rand).slice(-12);
             }
 
-                        // Excel export with embedded barcode images using ExcelJS
-                        btnExport.onclick = async ()=>{
-                                if(!products.length){alert('No products to export');return}
-                                if(typeof ExcelJS === 'undefined'){alert('ExcelJS not loaded');return}
+            // Excel export with embedded barcode images using ExcelJS
+            btnExport.onclick = async ()=>{
+                    if(!products.length){alert('No products to export');return}
+                    if(typeof ExcelJS === 'undefined'){alert('ExcelJS not loaded');return}
 
-                                const wb = new ExcelJS.Workbook();
-                                const ws = wb.addWorksheet('Products');
-                                ws.columns = [
-                                    {header:'Image', key:'img', width:18},
-                                    {header:'Code', key:'code', width:22},
-                                    {header:'Name', key:'name', width:30},
-                                    {header:'Description', key:'desc', width:40},
-                                    {header:'Stock', key:'stock', width:12}
-                                ];
+                    const wb = new ExcelJS.Workbook();
+                    const ws = wb.addWorksheet('Products');
+                    ws.columns = [
+                        {header:'Barcode Image', key:'img', width:18},
+                        {header:'Code', key:'code', width:22},
+                        {header:'Name', key:'name', width:30},
+                        {header:'Description', key:'desc', width:40},
+                        {header:'Stock', key:'stock', width:12}
+                    ];
 
-                                // helper: render a barcode SVG to PNG base64 (without prefix)
-                                const renderBarcodePngBase64 = (code)=>{
-                                    return new Promise((resolve)=>{
-                                        try{
-                                            const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-                                            JsBarcode(svg, code, {format:'CODE128', displayValue:false, width:2, height:60});
-                                            const svgData = new XMLSerializer().serializeToString(svg);
-                                            const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
-                                            const url = URL.createObjectURL(svgBlob);
-                                            const img = new Image();
-                                            img.onload = ()=>{
-                                                const canvas = document.createElement('canvas');
-                                                canvas.width = img.naturalWidth || 400;
-                                                canvas.height = img.naturalHeight || 120;
-                                                const ctx = canvas.getContext('2d');
-                                                ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-                                                ctx.drawImage(img,0,0);
-                                                const dataUrl = canvas.toDataURL('image/png');
-                                                URL.revokeObjectURL(url);
-                                                resolve(dataUrl.split(',')[1]);
-                                            };
-                                            img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
-                                            img.src = url;
-                                        }catch(err){console.warn('renderBarcode failed',err); resolve(null)}
-                                    })
+                    // helper: render a barcode SVG to PNG base64 (without prefix)
+                    const renderBarcodePngBase64 = (code)=>{
+                        return new Promise((resolve)=>{
+                            try{
+                                const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+                                JsBarcode(svg, code, {format:'CODE128', displayValue:false, width:2, height:60});
+                                const svgData = new XMLSerializer().serializeToString(svg);
+                                const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
+                                const url = URL.createObjectURL(svgBlob);
+                                const img = new Image();
+                                img.onload = ()=>{
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = img.naturalWidth || 400;
+                                    canvas.height = img.naturalHeight || 120;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+                                    ctx.drawImage(img,0,0);
+                                    const dataUrl = canvas.toDataURL('image/png');
+                                    URL.revokeObjectURL(url);
+                                    resolve(dataUrl.split(',')[1]); // return Base64 string without prefix
                                 };
+                                img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+                                img.src = url;
+                            }catch(err){console.warn('renderBarcode failed',err); resolve(null)}
+                        })
+                    };
 
-                                // add rows and images
-                                for(let i=0;i<products.length;i++){
-                                    const p = products[i];
-                                    const base64 = await renderBarcodePngBase64(p.code);
-                                    const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock});
-                                    // row index for ExcelJS is 1-based
-                                    if(base64){
-                                        try{
-                                            const imageId = wb.addImage({base64: base64, extension: 'png'});
-                                            // place the image in the first column for this row
-                                            ws.addImage(imageId, {tl:{col:0,row:row.number-1}, ext:{width:120, height:60}});
-                                            // set row height
-                                            ws.getRow(row.number).height = 45;
-                                        }catch(err){console.warn('addImage failed',err)}
-                                    }
-                                }
-
-                                // write workbook to buffer and save
-                                try{
-                                    const buf = await wb.xlsx.writeBuffer();
-                                    saveAs(new Blob([buf]), 'products.xlsx');
-                                }catch(err){console.error(err); alert('Export failed: '+err.message)}
+                    // add rows and images
+                    for(let i=0;i<products.length;i++){
+                        const p = products[i];
+                        const base64 = await renderBarcodePngBase64(p.code);
+                        const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock});
+                        // row index for ExcelJS is 1-based
+                        if(base64){
+                            try{
+                                const imageId = wb.addImage({base64: base64, extension: 'png'});
+                                // place the image in the first column for this row
+                                ws.addImage(imageId, {tl:{col:0,row:row.number-1}, ext:{width:120, height:60}});
+                                // set row height
+                                ws.getRow(row.number).height = 45;
+                            }catch(err){console.warn('addImage failed',err)}
                         }
+                    }
+
+                    // write workbook to buffer and save
+                    try{
+                        const buf = await wb.xlsx.writeBuffer();
+                        saveAs(new Blob([buf]), 'products.xlsx');
+                    }catch(err){console.error(err); alert('Export failed: '+err.message)}
+            }
 
             btnImport.onclick = ()=> importFile.click();
             importFile.onchange = async (e)=>{
                 const f = e.target.files[0]; if(!f) return;
-                const ext = f.name.split('.').pop().toLowerCase();
                 const data = await f.arrayBuffer();
                 let workbook;
                 try{ workbook = XLSX.read(data, {type:'array'}); }catch(err){alert('Import failed: '+err.message);return}
@@ -453,10 +459,10 @@
                 if(!arr.length){alert('No rows found');return}
                 // Map rows to products, expecting Code/Name/Description/Stock columns (case-insensitive)
                 arr.forEach(r=>{
-                    const code = r.Code||r.code||r['Barcode']||'';
-                    const name = r.Name||r.name||'';
-                    const desc = r.Description||r.description||r.Desc||'';
-                    const stock = r.Stock||r.stock||'';
+                    const code = String(r.Code||r.code||r['Barcode']||'').trim();
+                    const name = String(r.Name||r.name||'').trim();
+                    const desc = String(r.Description||r.description||r.Desc||'').trim();
+                    const stock = String(r.Stock||r.stock||'').trim();
                     if(!code) return;
                     // keep existing image if any
                     const existing = products.find(p=>p.code==code);
@@ -465,41 +471,49 @@
                 });
                 saveProducts();
                 alert('Import complete');
+                importFile.value = ''; // clear input
             }
 
             // Scanning - start/stop helpers with rear-camera preference and debounce
             async function startCameraScan(opts){
                 opts = opts || {};
-                btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
+                btnStartScan.disabled = true; btnStopScan.disabled = false; btnFocus.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
                 scanningPaused = false; lastScanned = {value:null, ts:0};
+                setPermHint('Scanning started...', '#059669');
+
                 try{
-                    // reset any previous reader to avoid freezing when switching cameras
+                    // reset any previous reader
                     try{ if(codeReader) { codeReader.reset(); } }catch(e){ console.warn('reset reader', e); }
-                    // create reader with format hints to bias decoding towards common linear symbologies
+
                     const hints = getZXingHints();
                     codeReader = new ZXing.BrowserMultiFormatReader(hints);
                     video.setAttribute('playsinline', '');
+
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
-                                        if(devices && devices.length){
-                                            // prefer ultrawide / back camera where available
-                                            const ultraRegex = /(ultra|ultrawide|0\.5x|0.5x|0\.3x|0.3x|wideangle|wide angle|ultra wide)/i;
-                                            const backRegex = /(back|rear|environment|main)/i;
-                                            let p = devices.find(d=> ultraRegex.test(d.label) && backRegex.test(d.label));
-                                            if(!p) p = devices.find(d=> ultraRegex.test(d.label));
-                                            if(!p) p = devices.find(d=> backRegex.test(d.label));
-                                            if(!p) p = devices[devices.length-1] || devices[0];
-                                            preferred = p;
-                                            // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
-                                            if(cameraSelect){
-                                                cameraSelect.innerHTML = '';
-                                                devices.forEach((d, i)=>{ const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt); });
-                                                try{ cameraSelect.value = preferred.deviceId; cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none'; }catch(e){}
-                                            }
-                                        }
-                                        const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : ((cameraSelect && cameraSelect.value) ? cameraSelect.value : (preferred ? preferred.deviceId : undefined));
-                    // start ZXing decode on the chosen device
-                    codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
+                    let deviceId = undefined;
+                    
+                    if(devices && devices.length){
+                        // Preferă camera din spate (environment/back/rear)
+                        const backRegex = /(back|rear|environment|main)/i;
+                        preferred = devices.find(d=> backRegex.test(d.label)) || devices[devices.length-1] || devices[0];
+                        deviceId = preferred ? preferred.deviceId : undefined;
+                    }
+
+                    // Definire constrângeri media optimizate
+                    const mediaConstraints = {
+                        video: {
+                            deviceId: deviceId ? { exact: deviceId } : undefined,
+                            facingMode: deviceId ? undefined : 'environment',
+                            // Încercăm să forțăm o rezoluție/framerate mai bun pentru decodare
+                            width: { min: 640, ideal: 1280, max: 1920 },
+                            height: { min: 480, ideal: 720, max: 1080 },
+                            frameRate: { ideal: 30 }
+                        }
+                    };
+
+                    // start ZXing decode on the chosen device with constraints
+                    codeReader.decodeFromVideoDevice(deviceId, video, mediaConstraints, (result, err) => {
                         if(result){
                             const text = result.getText();
                             const now = Date.now();
@@ -511,17 +525,15 @@
                             const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
                             onBarcodeScanned(text);
                         }
-                        if(err && !(err instanceof ZXing.NotFoundException)){
-                            console.warn(err);
-                        }
+                        // if(err && !(err instanceof ZXing.NotFoundException)){ console.warn(err); } // less verbose console
                     });
                 }catch(e){
-                    console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
+                    console.error('ZXing start failed:', e);
+                    setPermHint('Eroare la pornirea camerei. Încercați BarcodeDetector (dacă este disponibil).', '#b91c1c');
+                    // Fallback to BarcodeDetector (if available) - logic remains the same
                     try{
-                        // request a stream with the selected device if available, otherwise prefer environment
-                        const constraints = cameraSelect && cameraSelect.value ? {video:{deviceId:{exact: cameraSelect.value}}} : {video:{facingMode:'environment'}};
+                        const constraints = {video:{facingMode:'environment'}};
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                        // attach stream and ensure playsinline for mobile
                         video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
                         const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
                         if(!detector){console.warn('No BarcodeDetector available.');}
@@ -529,39 +541,42 @@
                             if(video.paused || video.ended) return;
                             try{
                                 if(detector){
-                                    // crop center region to improve detection for small/close barcodes
                                     const vw = video.videoWidth || video.clientWidth;
                                     const vh = video.videoHeight || video.clientHeight;
                                     if(vw && vh){
-                                        const cw = Math.floor(vw * 0.8);
-                                        const ch = Math.floor(vh * 0.36);
-                                        const sx = Math.floor((vw - cw)/2);
-                                        const sy = Math.floor((vh - ch)/2);
+                                        const cw = Math.floor(vw * 0.8); const ch = Math.floor(vh * 0.36);
+                                        const sx = Math.floor((vw - cw)/2); const sy = Math.floor((vh - ch)/2);
                                         scanCanvas.width = cw; scanCanvas.height = ch;
                                         scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
                                         const barcodes = await detector.detect(scanCanvas);
                                         if(barcodes && barcodes.length){
-                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                            const v = barcodes[0].rawValue; const now = Date.now(); 
+                                            if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; 
+                                            lastScanned={value:v,ts:now}; resultText.textContent=v; 
+                                            const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} 
+                                            onBarcodeScanned(v); 
                                         }
-                                    }else{
-                                        // fallback to direct detect on video element
-                                        const barcodes = await detector.detect(video);
-                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return; }
                                     }
                                 }
                             }catch(err){console.warn(err)}
                             requestAnimationFrame(scanLoop);
                         };
                         scanLoop();
-                    }catch(err){alert('Could not start camera: '+err.message);btnStartScan.disabled=false;btnStopScan.disabled=true}
+                    }catch(err){
+                        alert('Could not start camera: '+err.message);
+                        btnStartScan.disabled=false;btnStopScan.disabled=true;btnFocus.disabled=true;
+                        setPermHint('Eroare fatală la cameră: ' + (err.message || String(err)), '#b91c1c');
+                    }
                 }
             }
 
             function stopCameraScan(){
-                btnStartScan.disabled = false; btnStopScan.disabled = true; resultText.textContent='';
+                btnStartScan.disabled = false; btnStopScan.disabled = true; btnFocus.disabled = true; resultText.textContent='';
+                setPermHint('Scanare Oprită.', '#b91c1c');
                 if(codeReader){ try{ codeReader.reset(); }catch(e){console.warn(e)} }
                 if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null; }
                 scanningPaused = false; lastScanned = {value:null, ts:0};
+                if(frozen){btnResume.click();} // ensure we clean up the frozen frame UI if stopped externally
             }
 
             // bind buttons
@@ -570,74 +585,63 @@
                 if(ok) startCameraScan();
             };
             btnStopScan.onclick = stopCameraScan;
-            const btnTestCamera = document.getElementById('btn-test-camera');
-            // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
-            btnTestCamera.onclick = async ()=>{
-                try{
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    console.log('devices', devices);
-                    const cams = devices.filter(d=>d.kind==='videoinput');
-                    if(!cams.length){ alert('No camera devices found'); return; }
-                    const deviceId = cameraSelect && cameraSelect.value ? cameraSelect.value : cams[0].deviceId;
-                    const stream = await navigator.mediaDevices.getUserMedia({video: { deviceId: { exact: deviceId } }});
-                    // attach temporarily to video element
-                    video.srcObject = stream; await video.play();
-                    alert('Camera stream started for test. Check video preview.');
-                }catch(err){
-                    console.error('Test camera failed', err);
-                    alert('Camera test error: '+ (err && err.message ? err.message : String(err)));
-                }
-            };
-            const btnCapture = document.getElementById('btn-capture');
-            const btnResume = document.getElementById('btn-resume');
-            const btnFocus = document.getElementById('btn-focus');
-            const captureCanvas = document.getElementById('capture-canvas');
-            const captureCtx = captureCanvas.getContext('2d');
-            let frozen = false;
 
-            // Capture button: if camera not running, start scanner; otherwise freeze frame and try immediate decode
+            // Capture button: freeze frame and try immediate decode
             btnCapture.onclick = async ()=>{
-                // if camera not started, request permission and start scanning
                 if(!video.srcObject){
                     const ok = await requestCameraPermission();
                     if(!ok){ return; }
-                    await startCameraScan();
+                    await startCameraScan(); // start scanning if not already running
                     return;
                 }
-                // draw current frame into capture canvas sized to video pixel size
+                
+                // Draw current frame to capture canvas
                 const vw = video.videoWidth || video.clientWidth;
                 const vh = video.videoHeight || video.clientHeight;
                 if(!vw || !vh){ alert('Video not ready yet'); return; }
                 captureCanvas.width = vw; captureCanvas.height = vh;
                 captureCtx.drawImage(video, 0, 0, vw, vh);
-                // show canvas overlay (freeze effect)
+
+                // UI adjustments
                 captureCanvas.style.display = 'block';
                 video.style.display = 'none';
                 frozen = true;
-                // stop live decoding
+                btnResume.style.display = 'inline-block';
+                btnFocus.disabled = true; // disable focus while frozen
+                setPermHint('Frame înghețat. Încerc decodarea...', '#0ea5e9');
+
+                // Stop live decoding
                 try{ if(codeReader) codeReader.reset(); }catch(e){console.warn(e)}
-                // try decode from the frozen canvas using BarcodeDetector if available, otherwise fallback to ZXing image decode
+
+                // Try decode from the frozen canvas
                 try{
                     let found = false;
+                    let detectedValue = null;
                     if('BarcodeDetector' in window){
                         try{
                             const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
                             const barcodes = await detector.detect(captureCanvas);
-                            if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); found = true; }
+                            if(barcodes && barcodes.length){ detectedValue = barcodes[0].rawValue; found = true; }
                         }catch(e){ console.warn('BarcodeDetector on canvas failed', e); }
                     }
                     if(!found){
-                        // fallback to ZXing decode from the canvas image
-                        const tryZX = await decodeCanvasWithZXing(captureCanvas);
-                        if(tryZX){ resultText.textContent = tryZX; onBarcodeScanned(tryZX); found = true; }
+                        detectedValue = await decodeCanvasWithZXing(captureCanvas);
+                        if(detectedValue) found = true;
                     }
-                    if(!found){ resultText.textContent = '(No code detected in frozen image)'; }
-                }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
-                // show resume button
-                btnResume.style.display = 'inline-block';
+                    
+                    if(found){ 
+                        resultText.textContent = detectedValue; 
+                        onBarcodeScanned(detectedValue); 
+                        setPermHint('Decodare reușită pe imaginea înghețată.', '#059669');
+                    }else{ 
+                        resultText.textContent = '(Niciun cod detectat în imaginea înghețată)';
+                        foundProduct.innerHTML = '<div class="hint">Niciun cod găsit.</div>';
+                        setPermHint('Nu s-a detectat niciun cod. Apăsați "Reia" pentru a continua scanarea.', '#b91c1c');
+                    }
+                }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Eroare la decodarea imaginii înghețate)'; }
             };
 
-            // ZXing fallback: decode from a canvas by creating an image and using ZXing's image decoder
+            // ZXing fallback: decode from a canvas
             async function decodeCanvasWithZXing(canvas){
                 if(typeof ZXing === 'undefined') return null;
                 try{
@@ -645,7 +649,6 @@
                     const img = new Image();
                     img.src = dataUrl;
                     await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
-                    // create a fresh reader for image decode to avoid interfering with live reader
                     const reader = new ZXing.BrowserMultiFormatReader(getZXingHints());
                     if(typeof reader.decodeFromImageElement === 'function'){
                         const resObj = await reader.decodeFromImageElement(img);
@@ -670,69 +673,71 @@
                 }
             };
 
-            // Focus button: best-effort applyConstraints to request autofocus without restarting camera
+            // Focus button: best-effort applyConstraints to request autofocus
             btnFocus.onclick = async ()=>{
                 if(!video.srcObject){ alert('Camera not started'); return; }
                 try{
                     const track = video.srcObject.getVideoTracks()[0];
                     if(!track){ alert('No video track'); return; }
-                    const caps = track.getCapabilities ? track.getCapabilities() : {};
-                    if(caps.focusMode){
+                    const caps = track.getCapabilities ? track.getCapabilities() : {}; 
+                    
+                    // Priority 1: continuous focus mode
+                    if(caps.focusMode && caps.focusMode.indexOf('continuous') !== -1){
                         try{
                             await track.applyConstraints({advanced:[{focusMode: 'continuous'}]});
-                            setPermHint('Requested continuous focus (if supported).', '#059669');
-                        }catch(e){ console.warn('focus applyConstraints failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
+                            setPermHint('S-a solicitat focalizare continuă automată.', '#059669');
+                        }catch(e){ console.warn('focus applyConstraints failed', e); setPermHint('Solicitarea de focalizare a eșuat. ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
                         return;
                     }
+
+                    // Priority 2: fixed focus distance (e.g., set to mid-range)
                     if(caps.focusDistance){
                         try{
                             const min = (caps.focusDistance && typeof caps.focusDistance.min === 'number') ? caps.focusDistance.min : 0;
                             const max = (caps.focusDistance && typeof caps.focusDistance.max === 'number') ? caps.focusDistance.max : min;
                             const mid = (min+max)/2;
                             await track.applyConstraints({advanced:[{focusDistance: mid}]});
-                            setPermHint('Requested focus distance (if supported).', '#059669');
-                        }catch(e){ console.warn('focus distance apply failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
+                            setPermHint('S-a solicitat o distanță de focalizare fixă.', '#059669');
+                        }catch(e){ console.warn('focus distance apply failed', e); setPermHint('Solicitarea de focalizare a eșuat. ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
                         return;
                     }
-                    // If neither capability present, inform user but do NOT restart the camera (restart caused freezes on some devices)
-                    setPermHint('Auto-focus not directly supported via browser APIs on this device. Try moving camera closer/further.', '#b91c1c');
-                }catch(err){ console.warn(err); setPermHint('Focus request failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
+                    
+                    setPermHint('Focalizarea automată nu este suportată direct. Încercați să mișcați camera.', '#b91c1c');
+                }catch(err){ console.warn(err); setPermHint('Solicitare Focus Eșuată: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
             };
 
-            // cameraSelect onchange removed — the app chooses ultrawide back camera by default
 
-            // (Removed manual Force buttons — default selection now prefers ultrawide back camera)
-
-            // Keep capture and scan canvases in sync with video size on resize/orientation changes
             function syncCanvasSizes(){
                 try{
                     const vw = video.videoWidth || video.clientWidth || 640;
                     const vh = video.videoHeight || video.clientHeight || 480;
-                    // adjust visible capture canvas (overlay) size styles
                     const overlay = document.getElementById('capture-canvas');
                     if(overlay){ overlay.width = vw; overlay.height = vh; }
-                    // keep our internal scanCanvas roughly matching video size
                     if(scanCanvas){ scanCanvas.width = Math.floor(vw * 0.8); scanCanvas.height = Math.floor(vh * 0.36); }
                 }catch(e){ /* ignore */ }
             }
             window.addEventListener('resize', ()=>{ syncCanvasSizes(); });
             window.addEventListener('orientationchange', ()=>{ setTimeout(syncCanvasSizes, 220); });
-            // also sync when video metadata loads
             video.addEventListener('loadedmetadata', ()=>{ syncCanvasSizes(); });
 
             function onBarcodeScanned(value){
                 const p = products.find(x=>x.code==value);
                 if(p){
-                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div>${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}</div>`;
+                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:var(--muted)">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div>${p.image?'<div style="margin-top:8px;height:120px;overflow:hidden;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center"><img src="'+p.image+'" class="thumb"></div>':''}</div>`;
                 }else{
-                    foundProduct.innerHTML = '<div class="hint">Product not found in database.</div>';
+                    foundProduct.innerHTML = '<div class="hint" style="color:#d97706;font-weight:bold">Produsul nu a fost găsit în baza de date.</div>';
                 }
             }
 
             // init
             loadProducts();
-
-            // show PWA install prompt guidance
+            
+            // Initial camera check to show hint
+            document.addEventListener('DOMContentLoaded', async ()=>{
+                if(tabScan.classList.contains('active')){
+                    await requestCameraPermission();
+                }
+            });
             window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.deferredPrompt = e; });
         </script>
     </body>
