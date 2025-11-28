@@ -835,9 +835,13 @@
                     if(addBtn){
                         addBtn.onclick = ()=>{
                             try{
-                                const q = parseInt((qtyInput && qtyInput.value) || '1', 10);
-                                addToCart(p.code, isNaN(q)?1:q);
-                            }catch(err){ console.error('Add to cart failed', err); alert('Could not add to cart'); }
+                                const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
+                                const qty = isNaN(q) ? 1 : q;
+                                const ok = addToCart(p.code, qty);
+                                if(!ok) {
+                                    alert('Could not add to cart');
+                                }
+                            }catch(err){ console.error('Add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
                         };
                     } else {
                         console.warn('Add button not found in DOM');
@@ -875,7 +879,18 @@
                 });
                 totalEl.textContent = '$' + total.toFixed(2);
             }
-            function addToCart(code, qty){ const p = products.find(x=>x.code==code); if(!p){ alert('Product not found'); return; } const existing = cart.find(c=>c.code==code); if(existing){ existing.qty = (existing.qty||0) + (qty||1); } else { cart.push({code:p.code, name:p.name, desc:p.desc, price:p.price||0, qty: qty||1}); } saveCart(); setPermHint('Added to cart', '#059669'); }
+            function addToCart(code, qty){
+                try{
+                    const p = products.find(x=>x.code==code);
+                    if(!p){ alert('Product not found'); return false; }
+                    const existing = cart.find(c=>c.code==code);
+                    if(existing){ existing.qty = (existing.qty||0) + (qty||1); }
+                    else { cart.push({code:p.code, name:p.name, desc:p.desc, price:p.price||0, qty: qty||1}); }
+                    saveCart();
+                    try{ setPermHint('Added to cart', '#059669'); }catch(e){}
+                    return true;
+                }catch(err){ console.error('addToCart error', err); return false; }
+            }
             const btnClearCart = document.getElementById('btn-clear-cart'); if(btnClearCart) btnClearCart.onclick = ()=>{ if(confirm('Clear cart?')){ cart=[]; saveCart(); } };
             // load cart on start
             loadCart();
