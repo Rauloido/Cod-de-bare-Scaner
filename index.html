@@ -134,6 +134,7 @@
                         <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
+                    <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
 
                     <div class="scanner-wrap" style="height:420px">
                         <video id="video" playsinline></video>
@@ -222,9 +223,59 @@
             const isSecureContext = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
             if(!isSecureContext){ insecureWarning.style.display = 'block'; }
 
+            // permission hint UI
+            const permHint = document.getElementById('perm-hint');
+            function setPermHint(msg, color){ if(!permHint) return; permHint.textContent = msg; if(color) permHint.style.color = color; }
+
+            // Request camera permission proactively and return true if granted
+            async function requestCameraPermission(){
+                if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+                    setPermHint('Camera not supported by this browser.', '#d97706');
+                    return false;
+                }
+                // If insecure origin, warn and don't try (permission will be blocked)
+                if(!(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')){
+                    setPermHint('Page not served over HTTPS — camera permission will be blocked. Deploy to GitHub Pages or use HTTPS.', '#b91c1c');
+                    return false;
+                }
+                try{
+                    // Try Permissions API first for a quick check
+                    if(navigator.permissions && navigator.permissions.query){
+                        try{
+                            const p = await navigator.permissions.query({name: 'camera'});
+                            if(p.state === 'granted'){ setPermHint('Camera permission already granted.', '#059669'); return true; }
+                            if(p.state === 'denied'){ setPermHint('Camera permission was denied. Enable camera access in browser settings.', '#b91c1c'); return false; }
+                            // if 'prompt', we'll request below
+                        }catch(e){ /* some browsers don't support name:'camera' */ }
+                    }
+
+                    // Request a minimal video stream to trigger permission prompt
+                    setPermHint('Requesting camera permission...', '#0ea5e9');
+                    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+                    // got permission; immediately stop tracks since caller will reopen properly
+                    stream.getTracks().forEach(t=>t.stop());
+                    setPermHint('Camera permission granted. You can start scanning.', '#059669');
+                    return true;
+                }catch(err){
+                    console.warn('getUserMedia error', err);
+                    if(err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')){
+                        setPermHint('Camera permission blocked. Allow access in the browser prompt or settings.', '#b91c1c');
+                    }else if(err && err.name === 'NotFoundError'){
+                        setPermHint('No camera found on this device.', '#b91c1c');
+                    }else{
+                        setPermHint('Camera error: ' + (err && err.message ? err.message : String(err)), '#b91c1c');
+                    }
+                    return false;
+                }
+            }
+
             // Tabs (switch panels and manage camera)
             tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
-            tabScan.onclick = ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none'; startCameraScan(); }
+            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';
+                // proactively request permission so browser shows prompt immediately
+                const ok = await requestCameraPermission();
+                if(ok){ startCameraScan(); }else{ /* permission not granted or blocked; user will see guidance in UI */ }
+            }
 
             // Load/save
             function loadProducts(){
@@ -483,7 +534,10 @@
             }
 
             // bind buttons
-            btnStartScan.onclick = startCameraScan;
+            btnStartScan.onclick = async ()=>{
+                const ok = await requestCameraPermission();
+                if(ok) startCameraScan();
+            };
             btnStopScan.onclick = stopCameraScan;
             const btnTestCamera = document.getElementById('btn-test-camera');
             // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
