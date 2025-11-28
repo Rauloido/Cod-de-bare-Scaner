@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>Inventar Coduri de Bare</title>
+    
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1 { color: #007bff; text-align: center; margin-bottom: 20px; }
+        .mode-selector { text-align: center; margin-bottom: 20px; }
+        .mode-btn { padding: 10px 15px; margin: 0 10px; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; font-weight: bold; }
+        .mode-btn.active { background-color: #007bff; color: white; }
+        .mode-btn:not(.active) { background-color: #e2e6ea; color: #007bff; }
+        
+        /* Secțiunile de mod */
+        .mode-section { border: 1px solid #ccc; padding: 15px; border-radius: 5px; margin-top: 20px; display: none; }
+        .mode-section.active { display: block; }
+
+        /* Scanare */
+        #scanner-container { position: relative; width: 100%; height: 300px; background: #000; border-radius: 5px; overflow: hidden; margin-bottom: 15px; }
+        #scanner-container video { width: 100%; height: 100%; object-fit: cover; }
+        #scan-result { padding: 10px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 5px; font-weight: bold; }
+        
+        /* Generare */
+        input[type="text"], input[type="number"], textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #218838; }
+        #barcode-display { text-align: center; margin-top: 20px; padding: 15px; background-color: #f8f9fa; border: 1px dashed #ccc; border-radius: 5px; }
+        #generated-code { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+
+        /* Import/Export */
+        .io-section { margin-top: 20px; padding: 15px; border-top: 2px solid #007bff; }
+        .io-section button { margin-right: 10px; background-color: #ffc107; color: #333; }
+        .io-section button:hover { background-color: #e0a800; }
+        #file-input { display: none; }
+
+        /* Card Produs Afișat */
+        .product-card { border: 1px solid #007bff; padding: 15px; margin-top: 15px; border-radius: 5px; background-color: #e9f5ff; }
+        .product-card p { margin: 5px 0; }
+        .product-card strong { color: #0056b3; }
+        .product-image { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; }
+        
+        /* Mesaje de eroare */
+        .error-message { color: #dc3545; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📦 Inventar Simplu</h1>
+
+    <div class="mode-selector">
+        <button class="mode-btn active" id="btn-scan" data-mode="scan">🔍 Scanează Cod</button>
+        <button class="mode-btn" id="btn-generate" data-mode="generate">✨ Generează Cod</button>
+    </div>
+
+    <div class="mode-section active" id="scan-mode">
+        <h2>Scanner de Coduri de Bare</h2>
+        <p>Așezați codul de bare în fața camerei.</p>
+        <div id="scanner-container">
+            <video id="barcode-scanner" style="width: 100%; height: 100%;"></video>
+        </div>
+        <div id="scan-result" style="display: none;"></div>
+        <div id="product-info-display">
+            </div>
+        <div class="error-message" id="scan-error"></div>
+    </div>
+
+    <div class="mode-section" id="generate-mode">
+        <h2>Adaugă Produs Nou</h2>
+        <form id="product-form">
+            <label for="product-name">Nume Produs:</label>
+            <input type="text" id="product-name" required>
+
+            <label for="product-description">Descriere:</label>
+            <textarea id="product-description" required></textarea>
+            
+            <label for="product-sku">Număr Stoc (SKU/Număr de referință):</label>
+            <input type="text" id="product-sku" required>
+
+            <label for="product-barcode-input">Cod de Bare (Lăsați gol pentru generare automată):</label>
+            <input type="text" id="product-barcode-input" placeholder="Introduceți un cod EAN/UPC sau se va genera">
+            
+            <label for="product-image-url">URL Imagine Produs (Opțional):</label>
+            <input type="text" id="product-image-url" placeholder="Ex: https://exemplu.com/imagine.jpg">
+
+            <button type="submit">Generează & Salvează Produs</button>
+        </form>
+
+        <div id="barcode-display">
+            <p>Cod de bare generat:</p>
+            <svg id="generated-code"></svg>
+        </div>
+        <div class="error-message" id="generate-error"></div>
+    </div>
+    
+    <div class="io-section">
+        <h3>📊 Export/Import Date</h3>
+        <button id="export-btn">Exportă în Excel/CSV</button>
+        <button id="import-btn">Importă Excel/CSV</button>
+        <input type="file" id="file-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+    </div>
+
+</div> <script>
+    const STORAGE_KEY = 'productInventory';
+    let inventory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    let currentMode = 'scan'; // Modul implicit
+
+    // Elementele DOM
+    const scanModeSection = document.getElementById('scan-mode');
+    const generateModeSection = document.getElementById('generate-mode');
+    const btnScan = document.getElementById('btn-scan');
+    const btnGenerate = document.getElementById('btn-generate');
+    const productForm = document.getElementById('product-form');
+    const productInfoDisplay = document.getElementById('product-info-display');
+    const barcodeScanner = document.getElementById('barcode-scanner');
+    const scanResultDiv = document.getElementById('scan-result');
+    const scanErrorDiv = document.getElementById('scan-error');
+    const generateErrorDiv = document.getElementById('generate-error');
+    const fileInput = document.getElementById('file-input');
+
+    // --- Funcții Utilitare ---
+    function saveInventory() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(inventory));
+        console.log("Inventarul a fost salvat local.", inventory);
+    }
+
+    function switchMode(mode) {
+        if (currentMode === mode) return;
+
+        // Oprește scannerul Quagga la schimbarea modului
+        if (currentMode === 'scan') {
+            stopScanner();
+        }
+
+        currentMode = mode;
+        
+        // Actualizează butoanele de mod
+        btnScan.classList.remove('active');
+        btnGenerate.classList.remove('active');
+        
+        // Ascunde/Afișează secțiunile
+        scanModeSection.classList.remove('active');
+        generateModeSection.classList.remove('active');
+
+        if (mode === 'scan') {
+            btnScan.classList.add('active');
+            scanModeSection.classList.add('active');
+            startScanner(); // Pornește scannerul înapoi
+        } else if (mode === 'generate') {
+            btnGenerate.classList.add('active');
+            generateModeSection.classList.add('active');
+        }
+    }
+
+    // --- Modul 1: Scanare și Afișare ---
+
+    function startScanner() {
+        // Configurarea QuaggaJS pentru a folosi camera
+        Quagga.init({
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: barcodeScanner, // Video element
+                constraints: {
+                    facingMode: "environment" // Camera din spate
+                }
+            },
+            decoder: {
+                readers: ["ean_reader", "code_128_reader", "upc_reader", "code_39_reader"]
+            }
+        }, function (err) {
+            if (err) {
+                console.error(err);
+                // NOTĂ: Camera necesită HTTPS pentru a funcționa pe majoritatea telefoanelor
+                scanErrorDiv.textContent = 'Eroare la pornirea camerei: ' + err.message + '. (Camera necesită HTTPS pe telefon)';
+                return;
+            }
+            Quagga.start();
+            scanErrorDiv.textContent = '';
+            console.log("QuaggaJS a pornit.");
+        });
+
+        Quagga.onDetected(function (data) {
+            const code = data.codeResult.code;
+            displayProductInfo(code);
+            // Puteți opri scannerul aici dacă doriți să scaneze un singur cod
+            // stopScanner(); 
+        });
+        
+        scanResultDiv.style.display = 'block';
+        scanResultDiv.textContent = 'Scanner activ. Așteaptă cod...';
+    }
+
+    function stopScanner() {
+        if (Quagga) {
+             Quagga.stop();
+             scanResultDiv.textContent = '';
+             console.log("QuaggaJS oprit.");
+        }
+    }
+
+    function displayProductInfo(code) {
+        scanResultDiv.textContent = `Cod de bare scanat: ${code}`;
+        const product = inventory[code];
+
+        if (product) {
+            productInfoDisplay.innerHTML = `
+                <div class="product-card">
+                    <h3>Produs Găsit!</h3>
+                    <p><strong>Cod:</strong> ${code}</p>
+                    <p><strong>Nume:</strong> ${product.name}</p>
+                    <p><strong>Descriere:</strong> ${product.description}</p>
+                    <p><strong>SKU:</strong> ${product.sku}</p>
+                    ${product.imageUrl ? `<p><strong>Imagine:</strong></p><img src="${product.imageUrl}" class="product-image" alt="Imagine Produs">` : ''}
+                </div>
+            `;
+        } else {
+            productInfoDisplay.innerHTML = `
+                <div class="product-card" style="background-color: #f8d7da; border-color: #f5c6cb;">
+                    <h3>Produs Negăsit!</h3>
+                    <p>Codul <strong>${code}</strong> nu există în inventar.</p>
+                    <p>Puteți să îl adăugați în modul **Generează Cod**.</p>
+                </div>
+            `;
+        }
+    }
+
+    // --- Modul 2: Generare și Stocare ---
+
+    productForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const name = document.getElementById('product-name').value.trim();
+        const description = document.getElementById('product-description').value.trim();
+        const sku = document.getElementById('product-sku').value.trim();
+        let code = document.getElementById('product-barcode-input').value.trim();
+        const imageUrl = document.getElementById('product-image-url').value.trim();
+
+        if (name === '' || description === '' || sku === '') {
+            generateErrorDiv.textContent = 'Toate câmpurile (Nume, Descriere, SKU) sunt obligatorii.';
+            return;
+        }
+        
+        // Dacă codul este gol, generează unul semi-aleatoriu
+        if (code === '') {
+             // Generează un cod simplu (nevalid EAN, dar funcțional CODE128)
+             code = 'INV' + Date.now().toString().slice(-9); 
+        }
+
+        // Verifică unicitatea codului
+        if (inventory[code]) {
+             generateErrorDiv.textContent = `Eroare: Codul ${code} există deja în inventar.`;
+             return;
+        }
+
+        try {
+            // Generează codul de bare vizual (folosim CODE128 pentru flexibilitate)
+            JsBarcode("#generated-code", code, {
+                format: "CODE128", 
+                displayValue: true
+            });
+
+            // Stochează produsul
+            inventory[code] = {
+                code: code,
+                name: name,
+                description: description,
+                sku: sku,
+                imageUrl: imageUrl 
+            };
+            saveInventory();
+            
+            generateErrorDiv.textContent = `Produsul "${name}" (Cod: ${code}) a fost salvat cu succes!`;
+            // Resetează formularul, dar păstrează codul generat
+            productForm.reset();
+            document.getElementById('product-barcode-input').value = code;
+            
+        } catch (error) {
+            console.error("Eroare la generarea codului:", error);
+            generateErrorDiv.textContent = 'Eroare la generarea codului de bare. Asigurați-vă că este un format valid.';
+        }
+    });
+
+    // --- Funcționalitatea de Import/Export Excel (CSV/XLSX) ---
+
+    document.getElementById('export-btn').addEventListener('click', function() {
+        if (Object.keys(inventory).length === 0) {
+            alert("Inventarul este gol. Nu există nimic de exportat.");
+            return;
+        }
+
+        // Transformă obiectul inventar într-un array de obiecte
+        const data = Object.values(inventory);
+        
+        // Crează o foaie de calcul cu SheetJS
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Inventar Produse");
+        
+        // Scrie și descarcă fișierul
+        XLSX.writeFile(workbook, "Inventar_Produse.xlsx");
+        alert("Datele au fost exportate în Inventar_Produse.xlsx");
+    });
+    
+    document.getElementById('import-btn').addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            
+            // Convertește foaia de calcul în JSON
+            const json = XLSX.utils.sheet_to_json(worksheet);
+            
+            if (json.length === 0) {
+                 alert("Fișierul importat este gol sau nu a putut fi citit.");
+                 return;
+            }
+
+            let importCount = 0;
+            json.forEach(item => {
+                // Se asigură că există un cod și că este un string
+                if (item.code) {
+                    inventory[String(item.code)] = {
+                        code: String(item.code), 
+                        name: item.name || 'Fără Nume',
+                        description: item.description || '',
+                        sku: String(item.sku) || 'N/A',
+                        imageUrl: item.imageUrl || ''
+                    };
+                    importCount++;
+                }
+            });
+            
+            saveInventory();
+            alert(`S-au importat ${importCount} produse. Inventarul a fost actualizat.`);
+            
+            fileInput.value = ''; 
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // --- Inițializare și Ascultători ---
+
+    // Ascultători pentru schimbarea modului
+    btnScan.addEventListener('click', () => switchMode('scan'));
+    btnGenerate.addEventListener('click', () => switchMode('generate'));
+
+    // Inițializare la încărcarea paginii
+    document.addEventListener('DOMContentLoaded', function() {
+        switchMode('scan'); // Pornește în modul Scanare
+    });
+</script>
+
+</body>
+</html>
