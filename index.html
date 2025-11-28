@@ -118,6 +118,10 @@
                     <div style="display:flex;gap:8px;align-items:center">
                         <button id="btn-start-scan">Start Camera Scan</button>
                         <button id="btn-stop-scan" disabled>Stop</button>
+                        <button id="btn-capture" title="Freeze frame and attempt decode">Capture</button>
+                        <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
+                        <button id="btn-focus" title="Try to autofocus">Focus</button>
+                        <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
 
@@ -127,6 +131,7 @@
                             <div class="scanner-guide"></div>
                             <div class="red-line" aria-hidden="true"></div>
                             <div class="scan-flash" id="scan-flash"></div>
+                            <canvas id="capture-canvas" style="position:absolute;left:0;top:0;width:100%;height:100%;display:none;border-radius:8px"></canvas>
                         </div>
                     </div>
 
@@ -187,6 +192,10 @@
             let scanningPaused = false;
             let lastScanned = {value:null, ts:0};
             const SCAN_COOLDOWN = 1400; // ms
+            const cameraSelect = document.getElementById('camera-select');
+            // hidden canvas to crop video center for scanning (improves detection reliability)
+            const scanCanvas = document.createElement('canvas');
+            const scanCtx = scanCanvas.getContext('2d');
 
             // Tabs (switch panels and manage camera)
             tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
@@ -370,13 +379,35 @@
                 btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
                 scanningPaused = false; lastScanned = {value:null, ts:0};
                 try{
-                    if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+                    if(!codeReader){
+                        // configure ZXing with hints: try harder and limit possible formats for speed
+                        const hints = new Map();
+                        const formats = [
+                            ZXing.BarcodeFormat.CODE_128,
+                            ZXing.BarcodeFormat.CODE_39,
+                            ZXing.BarcodeFormat.EAN_13,
+                            ZXing.BarcodeFormat.EAN_8,
+                            ZXing.BarcodeFormat.UPC_A,
+                            ZXing.BarcodeFormat.UPC_E,
+                            ZXing.BarcodeFormat.ITF
+                        ];
+                        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+                        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+                        codeReader = new ZXing.BrowserMultiFormatReader(hints);
+                    }
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
-                    if(devices && devices.length){
-                        preferred = devices.find(d=>/back|rear|environment|camera 1|cam_0/i.test(d.label)) || devices[devices.length-1] || devices[0];
-                    }
-                    const deviceId = preferred ? preferred.deviceId : undefined;
+                                        if(devices && devices.length){
+                                                // populate camera select
+                                                cameraSelect.innerHTML = '';
+                                                devices.forEach(d=>{
+                                                    const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (cameraSelect.length+1)); cameraSelect.appendChild(opt);
+                                                });
+                                                preferred = devices.find(d=>/back|rear|environment|camera 1|cam_0/i.test(d.label)) || devices[devices.length-1] || devices[0];
+                                                cameraSelect.value = preferred.deviceId;
+                                                cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
+                                        }
+                                        const deviceId = cameraSelect.value || (preferred ? preferred.deviceId : undefined);
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
                             const text = result.getText();
@@ -396,7 +427,9 @@
                 }catch(e){
                     console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
                     try{
-                        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+                        // request a stream with the selected device if available, otherwise prefer environment
+                        const constraints = cameraSelect && cameraSelect.value ? {video:{deviceId:{exact: cameraSelect.value}, width:{ideal:1280}, height:{ideal:720}}} : {video:{facingMode:'environment', width:{ideal:1280}, height:{ideal:720}}};
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
                         video.srcObject = stream; await video.play();
                         const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
                         if(!detector){console.warn('No BarcodeDetector available.');}
@@ -404,9 +437,24 @@
                             if(video.paused || video.ended) return;
                             try{
                                 if(detector){
-                                    const barcodes = await detector.detect(video);
-                                    if(barcodes.length){
-                                        const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                    // crop center region to improve detection for small/close barcodes
+                                    const vw = video.videoWidth || video.clientWidth;
+                                    const vh = video.videoHeight || video.clientHeight;
+                                    if(vw && vh){
+                                        const cw = Math.floor(vw * 0.8);
+                                        const ch = Math.floor(vh * 0.36);
+                                        const sx = Math.floor((vw - cw)/2);
+                                        const sy = Math.floor((vh - ch)/2);
+                                        scanCanvas.width = cw; scanCanvas.height = ch;
+                                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                                        const barcodes = await detector.detect(scanCanvas);
+                                        if(barcodes && barcodes.length){
+                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                        }
+                                    }else{
+                                        // fallback to direct detect on video element
+                                        const barcodes = await detector.detect(video);
+                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return; }
                                     }
                                 }
                             }catch(err){console.warn(err)}
@@ -427,6 +475,132 @@
             // bind buttons
             btnStartScan.onclick = startCameraScan;
             btnStopScan.onclick = stopCameraScan;
+            const btnCapture = document.getElementById('btn-capture');
+            const btnResume = document.getElementById('btn-resume');
+            const btnFocus = document.getElementById('btn-focus');
+            const captureCanvas = document.getElementById('capture-canvas');
+            const captureCtx = captureCanvas.getContext('2d');
+            let frozen = false;
+
+            // Capture (freeze) current frame and try immediate decode
+            btnCapture.onclick = async ()=>{
+                if(!video.srcObject){ alert('Camera not started'); return; }
+                // draw current frame into capture canvas sized to video pixel size
+                const vw = video.videoWidth || video.clientWidth;
+                const vh = video.videoHeight || video.clientHeight;
+                if(!vw || !vh){ alert('Video not ready yet'); return; }
+                captureCanvas.width = vw; captureCanvas.height = vh;
+                captureCtx.drawImage(video, 0, 0, vw, vh);
+                // show canvas overlay (freeze effect)
+                captureCanvas.style.display = 'block';
+                video.style.display = 'none';
+                frozen = true;
+                // stop live decoding
+                try{ if(codeReader) codeReader.reset(); }catch(e){console.warn(e)}
+                // try decode from the frozen canvas using BarcodeDetector if available
+                try{
+                    let found = false;
+                    if('BarcodeDetector' in window){
+                        const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
+                        const barcodes = await detector.detect(captureCanvas);
+                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); found = true; }
+                    }
+
+                    // If not found, try rotated variants and ZXing fallback
+                    if(!found){
+                        // helper to try ZXing decode on a canvas (and rotated versions)
+                        const tryZXingOnCanvas = async (c)=>{
+                            // try ZXing decode methods if available
+                            try{
+                                const dataUrl = c.toDataURL();
+                                const img = new Image();
+                                img.src = dataUrl;
+                                await new Promise(r=>{ img.onload = r; img.onerror = r; });
+                                if(codeReader && typeof codeReader.decodeFromImageElement === 'function'){
+                                    try{
+                                        const res = await codeReader.decodeFromImageElement(img);
+                                        if(res){ const text = (res.getText)?res.getText():res; resultText.textContent = text; onBarcodeScanned(text); return true; }
+                                    }catch(e){ /* continue */ }
+                                }
+                                // try creating a temporary reader
+                                const tmp = new ZXing.BrowserMultiFormatReader();
+                                try{
+                                    const tres = await tmp.decodeFromImageElement(img);
+                                    if(tres){ const t = (tres.getText)?tres.getText():tres; resultText.textContent = t; onBarcodeScanned(t); return true; }
+                                }catch(e){ /* ignore */ }
+                            }catch(err){ console.warn('ZXing canvas decode failed', err); }
+                            return false;
+                        };
+
+                        // try original orientation then rotate 90/270
+                        let tried = false;
+                        tried = await tryZXingOnCanvas(captureCanvas);
+                        if(!tried){
+                            // rotate 90
+                            const rc = document.createElement('canvas');
+                            rc.width = captureCanvas.height; rc.height = captureCanvas.width;
+                            const rcctx = rc.getContext('2d');
+                            rcctx.translate(rc.width/2, rc.height/2);
+                            rcctx.rotate(Math.PI/2);
+                            rcctx.drawImage(captureCanvas, -captureCanvas.width/2, -captureCanvas.height/2);
+                            tried = await tryZXingOnCanvas(rc);
+                        }
+                        if(!tried){
+                            // rotate 270
+                            const rc2 = document.createElement('canvas');
+                            rc2.width = captureCanvas.height; rc2.height = captureCanvas.width;
+                            const rc2ctx = rc2.getContext('2d');
+                            rc2ctx.translate(rc2.width/2, rc2.height/2);
+                            rc2ctx.rotate(-Math.PI/2);
+                            rc2ctx.drawImage(captureCanvas, -captureCanvas.width/2, -captureCanvas.height/2);
+                            tried = await tryZXingOnCanvas(rc2);
+                        }
+
+                        if(!tried && !found) resultText.textContent = '(No code detected in frozen image)';
+                    }
+                }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
+                // show resume button
+                btnResume.style.display = 'inline-block';
+            };
+
+            // Resume scanning: hide capture canvas and restart live scanning
+            btnResume.onclick = async ()=>{
+                if(frozen){
+                    captureCanvas.style.display = 'none';
+                    video.style.display = 'block';
+                    frozen = false;
+                    btnResume.style.display = 'none';
+                    // restart scanning
+                    startCameraScan();
+                }
+            };
+
+            // Focus button: best-effort applyConstraints to request autofocus
+            btnFocus.onclick = async ()=>{
+                if(!video.srcObject){ alert('Camera not started'); return; }
+                try{
+                    const track = video.srcObject.getVideoTracks()[0];
+                    if(!track){ alert('No video track'); return; }
+                    const caps = track.getCapabilities ? track.getCapabilities() : {};
+                    if(caps.focusMode){
+                        await track.applyConstraints({advanced:[{focusMode: 'continuous'}]});
+                        alert('Requested continuous focus (if supported).');
+                        return;
+                    }
+                    if(caps.focusDistance){
+                        const min = caps.focusDistance.min || 0;
+                        const max = caps.focusDistance.max || min;
+                        const mid = (min+max)/2;
+                        await track.applyConstraints({advanced:[{focusDistance: mid}]});
+                        alert('Requested focus distance (if supported).');
+                        return;
+                    }
+                    // attempt a quick restart to trigger autofocus on some devices
+                    alert('Auto-focus not directly supported; restarting camera to trigger AF');
+                    stopCameraScan();
+                    setTimeout(()=>startCameraScan(),200);
+                }catch(err){ console.warn(err); alert('Focus request failed: '+err.message); }
+            };
 
             function onBarcodeScanned(value){
                 const p = products.find(x=>x.code==value);
