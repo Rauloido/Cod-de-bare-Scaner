@@ -73,6 +73,7 @@
             <div class="tabs">
                 <button class="tab active" id="tab-generate">Generate</button>
                 <button class="tab" id="tab-scan">Scan</button>
+                <button class="tab" id="tab-products">Products</button>
             </div>
 
             <div id="panel-generate" class="panel">
@@ -110,18 +111,22 @@
                         </div>
                     </div>
 
-                    <div>
-                        <div style="display:flex;justify-content:space-between;align-items:center">
-                            <strong>Products</strong>
-                            <div class="actions">
-                                <button id="btn-export">Export Excel</button>
-                                <button id="btn-import">Import Excel</button>
-                                <input id="import-file" type="file" accept=".xlsx,.xls,.csv" style="display:none">
-                            </div>
-                        </div>
+                    <!-- products moved to dedicated Products tab -->
+                </div>
+            </div>
 
-                        <div id="products-list" style="margin-top:8px;max-height:420px;overflow:auto"></div>
+            <div id="panel-products" class="panel" style="display:none">
+                <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <strong>Products</strong>
+                        <div class="actions">
+                            <button id="btn-export">Export Excel</button>
+                            <button id="btn-import">Import Excel</button>
+                            <input id="import-file" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+                        </div>
                     </div>
+
+                    <div id="products-list" style="margin-top:8px;max-height:640px;overflow:auto"></div>
                 </div>
             </div>
 
@@ -179,8 +184,10 @@
             // DOM
             const tabGenerate = document.getElementById('tab-generate');
             const tabScan = document.getElementById('tab-scan');
+            const tabProducts = document.getElementById('tab-products');
             const panelGenerate = document.getElementById('panel-generate');
             const panelScan = document.getElementById('panel-scan');
+            const panelProducts = document.getElementById('panel-products');
 
             const pname = document.getElementById('pname');
             const pdesc = document.getElementById('pdesc');
@@ -298,12 +305,13 @@
             }
 
             // Tabs (switch panels and manage camera)
-            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
-            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';
+            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');tabProducts.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none';panelProducts.style.display='none'; stopCameraScan(); }
+            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');tabProducts.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';panelProducts.style.display='none';
                 // proactively request permission so browser shows prompt immediately
                 const ok = await requestCameraPermission();
                 if(ok){ startCameraScan(); }else{ /* permission not granted or blocked; user will see guidance in UI */ }
             }
+            tabProducts.onclick = ()=>{ tabProducts.classList.add('active'); tabGenerate.classList.remove('active'); tabScan.classList.remove('active'); panelProducts.style.display='block'; panelGenerate.style.display='none'; panelScan.style.display='none'; stopCameraScan(); }
 
             // Load/save
             function loadProducts(){
