@@ -133,6 +133,7 @@
                         <button id="btn-test-camera" title="Quick camera test">Test Camera</button>
                         <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
                             <button id="btn-force-1x" title="Force use of main 1x back camera" style="margin-left:6px;">Force 1x</button>
+                            <button id="btn-force-ultra" title="Force use of ultrawide back camera" style="margin-left:6px;">Force Ultra</button>
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
                     <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
@@ -697,6 +698,29 @@
                     stopCameraScan(); await new Promise(r=>setTimeout(r,140)); await startCameraScan({forceDeviceId: dev});
                     setPermHint('Forced 1x camera request sent.', '#059669');
                 }catch(e){ console.warn('force1x failed', e); setPermHint('Force 1x failed: '+(e && e.message?e.message:String(e)), '#b91c1c'); }
+            }}
+
+            // Force Ultra button: explicitly select an ultrawide back camera if available
+            const btnForceUltra = document.getElementById('btn-force-ultra');
+            if(btnForceUltra){ btnForceUltra.onclick = async ()=>{
+                try{
+                    // get device list (use codeReader if available to list labeled devices)
+                    let devices = [];
+                    try{ if(codeReader && typeof codeReader.listVideoInputDevices === 'function') devices = await codeReader.listVideoInputDevices(); }catch(e){ /* ignore */ }
+                    if(!devices || !devices.length){ const all = await navigator.mediaDevices.enumerateDevices(); devices = all.filter(d=>d.kind==='videoinput'); }
+                    if(!devices || !devices.length){ setPermHint('No camera devices available.', '#b91c1c'); return; }
+                    // match ultrawide/ultra/0.5x labels, prefer back/rear/environment
+                    const ultraRegex = /ultra|ultrawide|0\.5x|0.5x|0\.3x|0.3x|wideangle|wide angle|ultra wide/i;
+                    const backRegex = /back|rear|environment|main/i;
+                    let candidate = devices.find(d=> ultraRegex.test(d.label) && backRegex.test(d.label));
+                    if(!candidate) candidate = devices.find(d=> ultraRegex.test(d.label));
+                    // fallback: pick last device that is not front if nothing else
+                    if(!candidate) candidate = devices.find(d=> backRegex.test(d.label)) || devices[devices.length-1];
+                    if(!candidate){ setPermHint('Could not find an ultrawide camera on this device.', '#b91c1c'); return; }
+                    // restart using the candidate device id
+                    stopCameraScan(); await new Promise(r=>setTimeout(r,160)); await startCameraScan({forceDeviceId: candidate.deviceId});
+                    setPermHint('Requested ultrawide camera.', '#059669');
+                }catch(err){ console.warn('force-ultra error', err); setPermHint('Force Ultra failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
             }}
 
             // Keep capture and scan canvases in sync with video size on resize/orientation changes
