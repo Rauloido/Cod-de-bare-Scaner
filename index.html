@@ -132,6 +132,7 @@
                         <button id="btn-focus" title="Try to autofocus">Focus</button>
                         <button id="btn-test-camera" title="Quick camera test">Test Camera</button>
                         <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
+                            <button id="btn-force-1x" title="Force use of main 1x back camera" style="margin-left:6px;">Force 1x</button>
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
                     <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
@@ -451,7 +452,8 @@
             }
 
             // Scanning - start/stop helpers with rear-camera preference and debounce
-            async function startCameraScan(){
+            async function startCameraScan(opts){
+                opts = opts || {};
                 btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
                 scanningPaused = false; lastScanned = {value:null, ts:0};
                 try{
@@ -463,28 +465,21 @@
                     let preferred = undefined;
                                         if(devices && devices.length){
                                                 // helper: choose preferred device favoring "1x" / wide back camera and avoid ultrawide/tele
-                                                const choosePreferredDevice = (devs)=>{
-                                                    const preferRegex = /(\b1x\b|\bwide\b|\bback\b|\brear\b|environment|primary)/i;
-                                                    const avoidRegex = /ultra|ultrawide|tele|2x|0\.5x|0\.3x|front|selfie/i;
-                                                    // try explicit 1x or wide back camera
-                                                    let p = devs.find(d=> preferRegex.test(d.label) && !avoidRegex.test(d.label));
-                                                    if(p) return p;
-                                                    // otherwise pick any that doesn't match avoid list
-                                                    p = devs.find(d=> !avoidRegex.test(d.label));
-                                                    if(p) return p;
-                                                    // fallback to last or first
-                                                    return devs[devs.length-1] || devs[0];
-                                                };
+                                                const preferRegex = /(\b1x\b|\bwide\b|\bback\b|\brear\b|environment|primary|main)/i;
+                                                const avoidRegex = /ultra|ultrawide|tele|2x|0\.5x|0\.3x|front|selfie|depth/i;
                                                 // populate camera select
                                                 cameraSelect.innerHTML = '';
-                                                devices.forEach((d, i)=>{
-                                                    const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt);
-                                                });
-                                                preferred = choosePreferredDevice(devices);
+                                                devices.forEach((d, i)=>{ const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt); });
+                                                // find best candidate: prefer labels matching preferRegex and not avoidRegex
+                                                let p = devices.find(d=> preferRegex.test(d.label) && !avoidRegex.test(d.label));
+                                                if(!p) p = devices.find(d=> !avoidRegex.test(d.label) && /back|rear|environment/i.test(d.label));
+                                                if(!p) p = devices.find(d=> !/front|selfie/i.test(d.label));
+                                                if(!p) p = devices[devices.length-1] || devices[0];
+                                                preferred = p;
                                                 cameraSelect.value = preferred.deviceId;
                                                 cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
                                         }
-                                        const deviceId = cameraSelect.value || (preferred ? preferred.deviceId : undefined);
+                                        const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : (cameraSelect.value || (preferred ? preferred.deviceId : undefined));
                     // start ZXing decode on the chosen device
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
@@ -597,20 +592,47 @@
                 frozen = true;
                 // stop live decoding
                 try{ if(codeReader) codeReader.reset(); }catch(e){console.warn(e)}
-                // try decode from the frozen canvas using BarcodeDetector if available
+                // try decode from the frozen canvas using BarcodeDetector if available, otherwise fallback to ZXing image decode
                 try{
+                    let found = false;
                     if('BarcodeDetector' in window){
-                        const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
-                        const barcodes = await detector.detect(captureCanvas);
-                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); }
-                        else { resultText.textContent = '(No code detected in frozen image)'; }
-                    } else {
-                        resultText.textContent = '(BarcodeDetector not available for frozen decode)';
+                        try{
+                            const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
+                            const barcodes = await detector.detect(captureCanvas);
+                            if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); found = true; }
+                        }catch(e){ console.warn('BarcodeDetector on canvas failed', e); }
                     }
+                    if(!found){
+                        // fallback to ZXing decode from the canvas image
+                        const tryZX = await decodeCanvasWithZXing(captureCanvas);
+                        if(tryZX){ resultText.textContent = tryZX; onBarcodeScanned(tryZX); found = true; }
+                    }
+                    if(!found){ resultText.textContent = '(No code detected in frozen image)'; }
                 }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
                 // show resume button
                 btnResume.style.display = 'inline-block';
             };
+
+            // ZXing fallback: decode from a canvas by creating an image and using ZXing's image decoder
+            async function decodeCanvasWithZXing(canvas){
+                if(typeof ZXing === 'undefined') return null;
+                try{
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const img = new Image();
+                    img.src = dataUrl;
+                    await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
+                    // create a fresh reader for image decode to avoid interfering with live reader
+                    const reader = new ZXing.BrowserMultiFormatReader();
+                    if(typeof reader.decodeFromImageElement === 'function'){
+                        const resObj = await reader.decodeFromImageElement(img);
+                        if(resObj && resObj.getText) return resObj.getText();
+                    }else if(typeof reader.decodeFromImage === 'function'){
+                        const resObj = await reader.decodeFromImage(img);
+                        if(resObj && resObj.getText) return resObj.getText();
+                    }
+                }catch(e){ console.warn('ZXing canvas decode failed', e); }
+                return null;
+            }
 
             // Resume scanning: hide capture canvas and restart live scanning
             btnResume.onclick = async ()=>{
@@ -664,6 +686,18 @@
                     await startCameraScan();
                 }catch(err){ console.warn('camera change error', err); }
             };
+
+            // Force 1x button: explicitly restart scan using currently selected preferred device id
+            const btnForce1x = document.getElementById('btn-force-1x');
+            if(btnForce1x){ btnForce1x.onclick = async ()=>{
+                try{
+                    const dev = cameraSelect.value;
+                    if(!dev){ setPermHint('No camera device selected to force.', '#b91c1c'); return; }
+                    // stop and restart with the chosen device id
+                    stopCameraScan(); await new Promise(r=>setTimeout(r,140)); await startCameraScan({forceDeviceId: dev});
+                    setPermHint('Forced 1x camera request sent.', '#059669');
+                }catch(e){ console.warn('force1x failed', e); setPermHint('Force 1x failed: '+(e && e.message?e.message:String(e)), '#b91c1c'); }
+            }}
 
             // Keep capture and scan canvases in sync with video size on resize/orientation changes
             function syncCanvasSizes(){
