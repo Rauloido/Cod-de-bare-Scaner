@@ -9,6 +9,103 @@
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="Barcode App">
         <link rel="apple-touch-icon" href="icon-192.png">
+        <style>
+            :root{--bg:#f6f7fb;--header:#3b82f6;--panel:#ffffff;--text:#111;--muted:#666}
+            .dark-mode{--bg:#0f1720;--header:#0b7285;--panel:#0b1220;--text:#e6eef6;--muted:#98a6b3}
+            body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
+            header{padding:12px 16px;background:var(--header);color:white}
+            .wrap{max-width:980px;margin:18px auto;padding:12px}
+            .tabs{display:flex;gap:8px;margin-bottom:12px}
+            button.tab{padding:10px 14px;border:1px solid rgba(0,0,0,0.06);background:var(--panel);border-radius:6px}
+            button.tab.active{background:#111;color:white}
+            .panel{background:var(--panel);padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06)}
+            /* scanner overlay */
+            .scanner-wrap{position:relative;border-radius:8px;overflow:hidden}
+            .scanner-wrap video{display:block;width:100%;height:100%;object-fit:cover;background:#000}
+            .scanner-overlay{position:absolute;inset:0;pointer-events:none}
+            .scanner-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80%;height:36%;border:2px dashed rgba(255,255,255,0.6);box-shadow:0 0 0 9999px rgba(0,0,0,0.25) inset;border-radius:8px}
+            .red-line{position:absolute;left:10%;right:10%;height:2px;top:50%;transform:translateY(-1px);background:rgba(255,0,0,0.95);box-shadow:0 0 8px rgba(255,0,0,0.6)}
+            .scan-flash{position:absolute;inset:0;background:rgba(255,255,255,0.08);opacity:0;transition:opacity .18s ease}
+            .scan-active .scan-flash{opacity:1}
+            .row{display:flex;gap:12px;align-items:center}
+            /* mobile-optimized controls */
+            @media(max-width:600px){
+                .grid{grid-template-columns:1fr}
+                .tabs{flex-direction:row}
+                button.tab{flex:1;padding:14px}
+                .actions button{padding:10px 12px;font-size:15px}
+            }
+            .big{padding:12px 16px;border-radius:10px;font-size:16px}
+            input,textarea{width:100%;padding:8px;border:1px solid rgba(0,0,0,0.06);border-radius:6px;background:transparent;color:var(--text)}
+            label{font-weight:600;margin-bottom:6px;display:block}
+            .grid{display:grid;grid-template-columns:1fr 320px;gap:12px}
+            img.thumb{max-width:100%;border-radius:6px;border:1px solid rgba(0,0,0,0.06)}
+            .product{border-bottom:1px solid rgba(0,0,0,0.06);padding:8px 0}
+            .actions{display:flex;gap:8px}
+            small.hint{color:var(--muted)}
+            footer{padding:14px;text-align:center;color:var(--muted)}
+            #insecure-warning{background:#ffefef;color:#801010;padding:10px;border-radius:6px;margin-bottom:12px;border:1px solid #ffd6d6}
+        </style>
+        <!-- Barcode generator -->
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+        <!-- ZXing for scanning (browser UMD) -->
+        <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
+        <!-- ExcelJS + FileSaver for exporting images into XLSX -->
+        <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+        <!-- SheetJS kept for imports -->
+        <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    </head>
+    <body>
+        <header>
+            <div style="max-width:980px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
+                <div><strong>Barcode Generator & Scanner</strong></div>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div style="font-size:13px;opacity:.95">Two modes: Generate ↔ Scan • Works on phones</div>
+                  <button id="btn-darkmode" title="Toggle dark mode" style="padding:6px 10px;border-radius:6px;border:none;background:rgba(255,255,255,0.15);color:white">Dark</button>
+                </div>
+            </div>
+        </header>
+        <main class="wrap">
+            <div id="insecure-warning" style="display:none">
+                <strong>Camera blocked:</strong> This page must be served over HTTPS (for example, via GitHub Pages) or from <code>localhost</code> for camera access. Deploy to GitHub Pages or serve over HTTPS to enable camera permissions.
+            </div>
+            <div class="tabs">
+                <button class="tab active" id="tab-generate">Generate</button>
+                <button class="tab" id="tab-scan">Scan</button>
+            </div>
+
+            <div id="panel-generate" class="panel">
+                <div class="grid">
+                    <div>
+                        <label for="pname">Name</label>
+                        <input id="pname" placeholder="Product name">
+
+                        <label for="pdesc">Description</label>
+                        <textarea id="pdesc" rows="3" placeholder="Short description"></textarea>
+
+                        <label for="pstock">Stock / Number</label>
+                        <input id="pstock" placeholder="Quantity or SKU number">
+
+                        <label for="pcode">Barcode value (optional)</label>
+                        <input id="pcode" placeholder="Leave empty to auto-generate numeric code">
+
+                        <label for="pimage">Image (optional)</label>
+                        <input id="pimage" type="file" accept="image/*">
+
+                        <div style="margin-top:10px" class="actions">
+                            <button id="btn-generate">Generate Barcode</button>
+                            <button id="btn-save" disabled>Save Product</button>
+                        </div>
+
+                        <div style="margin-top:10px">
+                            <svg id="barcode"></svg>
+                        </div>
+
+                        <div style="margin-top:8px">
+                            <button id="btn-download" disabled>Download Barcode PNG</button>
+                        </div>
+                    </div>
 
                     <div>
                         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -33,6 +130,7 @@
                         <button id="btn-capture" title="Freeze frame and attempt decode">Capture</button>
                         <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
                         <button id="btn-focus" title="Try to autofocus">Focus</button>
+                        <button id="btn-test-camera" title="Quick camera test">Test Camera</button>
                         <select id="camera-select" aria-label="Camera select" style="margin-left:8px"></select>
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
                     </div>
@@ -108,9 +206,21 @@
             // hidden canvas to crop video center for scanning (improves detection reliability)
             const scanCanvas = document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d');
-            let currentStream = null;
-            let scanningActive = false;
-            let scanLoopHandle = null;
+
+            // Dark mode toggle
+            const btnDark = document.getElementById('btn-darkmode');
+            function applyDarkMode(enabled){
+                if(enabled) document.documentElement.classList.add('dark-mode'); else document.documentElement.classList.remove('dark-mode');
+                localStorage.setItem('dark-mode', enabled? '1':'0');
+            }
+            btnDark.onclick = ()=>{ const on = !(localStorage.getItem('dark-mode')==='1'); applyDarkMode(on); btnDark.textContent = on? 'Light':'Dark'; };
+            // apply saved preference
+            if(localStorage.getItem('dark-mode')==='1'){ applyDarkMode(true); btnDark.textContent='Light'; }
+
+            // insecure origin check (show a short message; user will deploy to GitHub Pages)
+            const insecureWarning = document.getElementById('insecure-warning');
+            const isSecureContext = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+            if(!isSecureContext){ insecureWarning.style.display = 'block'; }
 
             // Tabs (switch panels and manage camera)
             tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none'; stopCameraScan(); }
@@ -289,29 +399,110 @@
                 alert('Import complete');
             }
 
-
+            // Scanning - start/stop helpers with rear-camera preference and debounce
+            async function startCameraScan(){
+                btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
+                scanningPaused = false; lastScanned = {value:null, ts:0};
+                try{
+                    if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+                    const devices = await codeReader.listVideoInputDevices();
+                    let preferred = undefined;
+                                        if(devices && devices.length){
+                                                // populate camera select
+                                                cameraSelect.innerHTML = '';
+                                                devices.forEach(d=>{
+                                                    const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (cameraSelect.length+1)); cameraSelect.appendChild(opt);
+                                                });
+                                                preferred = devices.find(d=>/back|rear|environment|camera 1|cam_0/i.test(d.label)) || devices[devices.length-1] || devices[0];
+                                                cameraSelect.value = preferred.deviceId;
+                                                cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none';
+                                        }
+                                        const deviceId = cameraSelect.value || (preferred ? preferred.deviceId : undefined);
+                    codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
+                        if(result){
+                            const text = result.getText();
+                            const now = Date.now();
+                            if(scanningPaused) return;
+                            if(lastScanned.value === text && (now - lastScanned.ts) < SCAN_COOLDOWN) return;
+                            lastScanned = {value:text, ts:now};
+                            scanningPaused = true; setTimeout(()=>{scanningPaused=false}, SCAN_COOLDOWN);
+                            resultText.textContent = text;
+                            const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
+                            onBarcodeScanned(text);
+                        }
+                        if(err && !(err instanceof ZXing.NotFoundException)){
+                            console.warn(err);
+                        }
+                    });
+                }catch(e){
+                    console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
+                    try{
+                        // request a stream with the selected device if available, otherwise prefer environment
+                        const constraints = cameraSelect && cameraSelect.value ? {video:{deviceId:{exact: cameraSelect.value}}} : {video:{facingMode:'environment'}};
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        video.srcObject = stream; await video.play();
+                        const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
+                        if(!detector){console.warn('No BarcodeDetector available.');}
+                        const scanLoop = async ()=>{
+                            if(video.paused || video.ended) return;
+                            try{
+                                if(detector){
+                                    // crop center region to improve detection for small/close barcodes
+                                    const vw = video.videoWidth || video.clientWidth;
+                                    const vh = video.videoHeight || video.clientHeight;
+                                    if(vw && vh){
+                                        const cw = Math.floor(vw * 0.8);
+                                        const ch = Math.floor(vh * 0.36);
+                                        const sx = Math.floor((vw - cw)/2);
+                                        const sy = Math.floor((vh - ch)/2);
+                                        scanCanvas.width = cw; scanCanvas.height = ch;
+                                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                                        const barcodes = await detector.detect(scanCanvas);
+                                        if(barcodes && barcodes.length){
+                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                        }
+                                    }else{
+                                        // fallback to direct detect on video element
+                                        const barcodes = await detector.detect(video);
+                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return; }
+                                    }
+                                }
+                            }catch(err){console.warn(err)}
+                            requestAnimationFrame(scanLoop);
+                        };
+                        scanLoop();
+                    }catch(err){alert('Could not start camera: '+err.message);btnStartScan.disabled=false;btnStopScan.disabled=true}
+                }
             }
 
             function stopCameraScan(){
                 btnStartScan.disabled = false; btnStopScan.disabled = true; resultText.textContent='';
-                // stop ZXing reader if present
                 if(codeReader){ try{ codeReader.reset(); }catch(e){console.warn(e)} }
-                // stop any active scanning loop
-                scanningActive = false;
-                if(scanLoopHandle){ try{ if(typeof scanLoopHandle === 'number') cancelAnimationFrame(scanLoopHandle); else clearTimeout(scanLoopHandle); }catch(e){} scanLoopHandle = null; }
-                // stop media tracks
-                try{
-                    if(currentStream){ currentStream.getTracks().forEach(t=>t.stop()); }
-                    if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject = null; }
-                }catch(e){ console.warn('Error stopping stream', e); }
-                currentStream = null;
+                if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null; }
                 scanningPaused = false; lastScanned = {value:null, ts:0};
             }
 
             // bind buttons
             btnStartScan.onclick = startCameraScan;
             btnStopScan.onclick = stopCameraScan;
-            cameraSelect.onchange = ()=>{ if(scanningActive){ stopCameraScan(); startCameraScan(); } }
+            const btnTestCamera = document.getElementById('btn-test-camera');
+            // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
+            btnTestCamera.onclick = async ()=>{
+                try{
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    console.log('devices', devices);
+                    const cams = devices.filter(d=>d.kind==='videoinput');
+                    if(!cams.length){ alert('No camera devices found'); return; }
+                    const deviceId = cameraSelect && cameraSelect.value ? cameraSelect.value : cams[0].deviceId;
+                    const stream = await navigator.mediaDevices.getUserMedia({video: { deviceId: { exact: deviceId } }});
+                    // attach temporarily to video element
+                    video.srcObject = stream; await video.play();
+                    alert('Camera stream started for test. Check video preview.');
+                }catch(err){
+                    console.error('Test camera failed', err);
+                    alert('Camera test error: '+ (err && err.message ? err.message : String(err)));
+                }
+            };
             const btnCapture = document.getElementById('btn-capture');
             const btnResume = document.getElementById('btn-resume');
             const btnFocus = document.getElementById('btn-focus');
@@ -336,64 +527,13 @@
                 try{ if(codeReader) codeReader.reset(); }catch(e){console.warn(e)}
                 // try decode from the frozen canvas using BarcodeDetector if available
                 try{
-                    let found = false;
                     if('BarcodeDetector' in window){
                         const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
                         const barcodes = await detector.detect(captureCanvas);
-                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); found = true; }
-                    }
-
-                    // If not found, try rotated variants and ZXing fallback
-                    if(!found){
-                        // helper to try ZXing decode on a canvas (and rotated versions)
-                        const tryZXingOnCanvas = async (c)=>{
-                            // try ZXing decode methods if available
-                            try{
-                                const dataUrl = c.toDataURL();
-                                const img = new Image();
-                                img.src = dataUrl;
-                                await new Promise(r=>{ img.onload = r; img.onerror = r; });
-                                if(codeReader && typeof codeReader.decodeFromImageElement === 'function'){
-                                    try{
-                                        const res = await codeReader.decodeFromImageElement(img);
-                                        if(res){ const text = (res.getText)?res.getText():res; resultText.textContent = text; onBarcodeScanned(text); return true; }
-                                    }catch(e){ /* continue */ }
-                                }
-                                // try creating a temporary reader
-                                const tmp = new ZXing.BrowserMultiFormatReader();
-                                try{
-                                    const tres = await tmp.decodeFromImageElement(img);
-                                    if(tres){ const t = (tres.getText)?tres.getText():tres; resultText.textContent = t; onBarcodeScanned(t); return true; }
-                                }catch(e){ /* ignore */ }
-                            }catch(err){ console.warn('ZXing canvas decode failed', err); }
-                            return false;
-                        };
-
-                        // try original orientation then rotate 90/270
-                        let tried = false;
-                        tried = await tryZXingOnCanvas(captureCanvas);
-                        if(!tried){
-                            // rotate 90
-                            const rc = document.createElement('canvas');
-                            rc.width = captureCanvas.height; rc.height = captureCanvas.width;
-                            const rcctx = rc.getContext('2d');
-                            rcctx.translate(rc.width/2, rc.height/2);
-                            rcctx.rotate(Math.PI/2);
-                            rcctx.drawImage(captureCanvas, -captureCanvas.width/2, -captureCanvas.height/2);
-                            tried = await tryZXingOnCanvas(rc);
-                        }
-                        if(!tried){
-                            // rotate 270
-                            const rc2 = document.createElement('canvas');
-                            rc2.width = captureCanvas.height; rc2.height = captureCanvas.width;
-                            const rc2ctx = rc2.getContext('2d');
-                            rc2ctx.translate(rc2.width/2, rc2.height/2);
-                            rc2ctx.rotate(-Math.PI/2);
-                            rc2ctx.drawImage(captureCanvas, -captureCanvas.width/2, -captureCanvas.height/2);
-                            tried = await tryZXingOnCanvas(rc2);
-                        }
-
-                        if(!tried && !found) resultText.textContent = '(No code detected in frozen image)';
+                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); }
+                        else { resultText.textContent = '(No code detected in frozen image)'; }
+                    } else {
+                        resultText.textContent = '(BarcodeDetector not available for frozen decode)';
                     }
                 }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
                 // show resume button
