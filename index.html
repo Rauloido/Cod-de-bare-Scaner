@@ -87,6 +87,9 @@
                         <label for="pstock">Stock / Number</label>
                         <input id="pstock" placeholder="Quantity or SKU number">
 
+                        <label for="pprice">Price</label>
+                        <input id="pprice" placeholder="Price (e.g. 9.99)">
+
                         <label for="pcode">Barcode value (optional)</label>
                         <input id="pcode" placeholder="Leave empty to auto-generate numeric code">
 
@@ -126,8 +129,7 @@
                 <div style="display:flex;gap:12px;flex-direction:column">
                     <div style="display:flex;gap:8px;align-items:center">
                         <button id="btn-start-scan">Start Camera Scan</button>
-                        <button id="btn-stop-scan" disabled>Stop</button>
-                        <button id="btn-capture" title="Freeze frame and attempt decode">Capture</button>
+                        <button id="btn-stop-scan" disabled>Stop</button>                    
                         <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
                         <!-- camera selection removed (app will prefer ultrawide back camera by default) -->
                         <small class="hint">Tip: allow camera, align barcode with the red line</small>
@@ -154,6 +156,14 @@
                             <div id="found-product" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fff;min-height:70px"></div>
                         </div>
                     </div>
+                    <div id="cart-panel" style="margin-top:12px;padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:var(--panel)">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>Cart</strong><div><button id="btn-clear-cart">Clear Cart</button></div></div>
+                        <div id="cart-list" style="max-height:220px;overflow:auto;margin-bottom:8px"></div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div><strong>Total</strong></div>
+                            <div id="cart-total" style="font-size:18px;font-weight:700">$0.00</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -177,6 +187,7 @@
             const pstock = document.getElementById('pstock');
             const pcode = document.getElementById('pcode');
             const pimage = document.getElementById('pimage');
+            const pprice = document.getElementById('pprice');
             const btnGenerate = document.getElementById('btn-generate');
             const btnSave = document.getElementById('btn-save');
             const btnDownload = document.getElementById('btn-download');
@@ -309,7 +320,7 @@
                 if(!products.length){productsList.innerHTML='<div class="hint">No products yet.</div>';return}
                 products.slice().reverse().forEach((p,idx)=>{
                     const el=document.createElement('div');el.className='product';
-                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
+                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
                     productsList.appendChild(el);
                 });
                 // attach handlers
@@ -340,7 +351,7 @@
 
             btnSave.onclick = ()=>{
                 if(!currentBarcodeValue){alert('Generate barcode first');return}
-                const obj={code:currentBarcodeValue,name:pname.value||'(no name)',desc:pdesc.value||'',stock:pstock.value||'',image:selectedImageBase64||null};
+                const obj={code:currentBarcodeValue,name:pname.value||'(no name)',desc:pdesc.value||'',stock:pstock.value||'',price:pprice.value||'',image:selectedImageBase64||null};
                 // avoid duplicates
                 products = products.filter(p=>p.code!==obj.code);
                 products.push(obj);
@@ -387,7 +398,8 @@
                                     {header:'Code', key:'code', width:22},
                                     {header:'Name', key:'name', width:30},
                                     {header:'Description', key:'desc', width:40},
-                                    {header:'Stock', key:'stock', width:12}
+                                    {header:'Stock', key:'stock', width:12},
+                                    {header:'Price', key:'price', width:12}
                                 ];
 
                                 // helper: render a barcode SVG to PNG base64 (without prefix)
@@ -421,7 +433,7 @@
                                 for(let i=0;i<products.length;i++){
                                     const p = products[i];
                                     const base64 = await renderBarcodePngBase64(p.code);
-                                    const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock});
+                                    const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock, price:p.price||''});
                                     // row index for ExcelJS is 1-based
                                     if(base64){
                                         try{
@@ -451,17 +463,18 @@
                 const first = workbook.SheetNames[0];
                 const arr = XLSX.utils.sheet_to_json(workbook.Sheets[first]);
                 if(!arr.length){alert('No rows found');return}
-                // Map rows to products, expecting Code/Name/Description/Stock columns (case-insensitive)
+                // Map rows to products, expecting Code/Name/Description/Stock/Price columns (case-insensitive)
                 arr.forEach(r=>{
                     const code = r.Code||r.code||r['Barcode']||'';
                     const name = r.Name||r.name||'';
                     const desc = r.Description||r.description||r.Desc||'';
                     const stock = r.Stock||r.stock||'';
+                    const price = r.Price||r.price||'';
                     if(!code) return;
                     // keep existing image if any
                     const existing = products.find(p=>p.code==code);
                     products = products.filter(p=>p.code!=code);
-                    products.push({code, name, desc, stock, image: existing?existing.image:null});
+                    products.push({code, name, desc, stock, price, image: existing?existing.image:null});
                 });
                 saveProducts();
                 alert('Import complete');
@@ -533,8 +546,9 @@
                                     const vw = video.videoWidth || video.clientWidth;
                                     const vh = video.videoHeight || video.clientHeight;
                                     if(vw && vh){
-                                        const cw = Math.floor(vw * 0.8);
-                                        const ch = Math.floor(vh * 0.36);
+                                                        // use a smaller crop and lower resolution for faster detection
+                                                        const cw = Math.floor(vw * 0.6);
+                                                        const ch = Math.floor(vh * 0.28);
                                         const sx = Math.floor((vw - cw)/2);
                                         const sy = Math.floor((vh - ch)/2);
                                         scanCanvas.width = cw; scanCanvas.height = ch;
@@ -550,7 +564,8 @@
                                     }
                                 }
                             }catch(err){console.warn(err)}
-                            requestAnimationFrame(scanLoop);
+                                // throttle detection loop for performance (scan every ~120ms)
+                                setTimeout(()=>{ requestAnimationFrame(scanLoop); }, 120);
                         };
                         scanLoop();
                     }catch(err){alert('Could not start camera: '+err.message);btnStartScan.disabled=false;btnStopScan.disabled=true}
@@ -641,10 +656,15 @@
             async function decodeCanvasWithZXing(canvas){
                 if(typeof ZXing === 'undefined') return null;
                 try{
-                    const dataUrl = canvas.toDataURL('image/png');
-                    const img = new Image();
-                    img.src = dataUrl;
-                    await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
+                    // scale the canvas down to reduce ZXing decoding time (max dimension limited)
+                    const maxDim = 800;
+                    let tw = canvas.width, th = canvas.height;
+                    if(tw > maxDim){ const scale = maxDim / tw; tw = Math.floor(tw * scale); th = Math.floor(th * scale); }
+                    if(th > maxDim){ const scale = maxDim / th; tw = Math.floor(tw * scale); th = Math.floor(th * scale); }
+                    const tmp = document.createElement('canvas'); tmp.width = Math.max(1, tw); tmp.height = Math.max(1, th); const tctx = tmp.getContext('2d');
+                    tctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, tmp.width, tmp.height);
+                    const dataUrl = tmp.toDataURL('image/png');
+                    const img = new Image(); img.src = dataUrl; await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
                     // create a fresh reader for image decode to avoid interfering with live reader
                     const reader = new ZXing.BrowserMultiFormatReader(getZXingHints());
                     if(typeof reader.decodeFromImageElement === 'function'){
@@ -723,7 +743,20 @@
             function onBarcodeScanned(value){
                 const p = products.find(x=>x.code==value);
                 if(p){
-                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)}</div>${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}</div>`;
+                    // show product details and add-to-cart controls
+                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+                            <label style="font-size:13px">Qty</label>
+                            <input id="cart-qty" type="number" value="1" min="1" style="width:72px;padding:6px;border-radius:6px;border:1px solid #ddd">
+                            <button id="btn-add-cart" style="padding:8px 10px">Add to cart</button>
+                        </div>
+                    </div>`;
+                    // wire add to cart
+                    setTimeout(()=>{
+                        const addBtn = document.getElementById('btn-add-cart');
+                        const qtyInput = document.getElementById('cart-qty');
+                        if(addBtn){ addBtn.onclick = ()=>{ const q = parseInt(qtyInput.value || '1', 10); addToCart(p.code, isNaN(q)?1:q); } }
+                    }, 20);
                 }else{
                     foundProduct.innerHTML = '<div class="hint">Product not found in database.</div>';
                 }
@@ -731,6 +764,36 @@
 
             // init
             loadProducts();
+
+            // CART: simple cart stored in localStorage
+            const CART_KEY = 'cart-db-v1';
+            let cart = [];
+            function loadCart(){ try{ const raw = localStorage.getItem(CART_KEY); cart = raw?JSON.parse(raw):[]; }catch(e){ cart=[] } renderCart(); }
+            function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); renderCart(); }
+            function renderCart(){
+                const list = document.getElementById('cart-list'); const totalEl = document.getElementById('cart-total');
+                if(!list) return;
+                list.innerHTML = '';
+                if(!cart.length){ list.innerHTML = '<div class="hint">Cart is empty</div>'; totalEl.textContent = '$0.00'; return; }
+                let total = 0;
+                cart.forEach((it, idx)=>{
+                    const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px 0';
+                    const left = document.createElement('div'); left.innerHTML = `<div style="font-weight:600">${escapeHtml(it.name)}</div><div style="font-size:13px;color:#555">${escapeHtml(it.code)} • ${escapeHtml(it.desc||'')}</div>`;
+                    const right = document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; right.style.gap='8px';
+                    const qty = document.createElement('input'); qty.type='number'; qty.min='1'; qty.value = it.qty; qty.style.width='64px'; qty.style.padding='6px'; qty.onchange = ()=>{ const v = parseInt(qty.value||'1',10); it.qty = isNaN(v)?1:v; saveCart(); };
+                    const price = document.createElement('div'); const pnum = parseFloat(it.price) || 0; price.textContent = '$'+(pnum.toFixed(2));
+                    const rm = document.createElement('button'); rm.textContent='Remove'; rm.onclick = ()=>{ cart.splice(idx,1); saveCart(); };
+                    right.appendChild(qty); right.appendChild(price); right.appendChild(rm);
+                    row.appendChild(left); row.appendChild(right);
+                    list.appendChild(row);
+                    total += (pnum * (it.qty||1));
+                });
+                totalEl.textContent = '$' + total.toFixed(2);
+            }
+            function addToCart(code, qty){ const p = products.find(x=>x.code==code); if(!p){ alert('Product not found'); return; } const existing = cart.find(c=>c.code==code); if(existing){ existing.qty = (existing.qty||0) + (qty||1); } else { cart.push({code:p.code, name:p.name, desc:p.desc, price:p.price||0, qty: qty||1}); } saveCart(); setPermHint('Added to cart', '#059669'); }
+            const btnClearCart = document.getElementById('btn-clear-cart'); if(btnClearCart) btnClearCart.onclick = ()=>{ if(confirm('Clear cart?')){ cart=[]; saveCart(); } };
+            // load cart on start
+            loadCart();
 
             // show PWA install prompt guidance
             window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.deferredPrompt = e; });
