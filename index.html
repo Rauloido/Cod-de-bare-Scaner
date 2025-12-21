@@ -10,21 +10,24 @@
         <meta name="apple-mobile-web-app-title" content="Barcode App">
         <link rel="apple-touch-icon" href="icon-192.png">
         <style>
-            :root{--bg:#f6f7fb;--header:#132b52;--panel:#ffffff;--text:#111;--muted:#666}
-            .dark-mode{--bg:#0f1720;--header:#17213f;--panel:#ffffff;--text:#e6eef6;--muted:#98a6b3}
+            :root{--bg:#121212;--header:#000000;--panel:#1e1e1e;--text:#ffffff;--muted:#808080}
+            .light-mode{--bg:#f6f7fb;--header:#132b52;--panel:#ffffff;--text:#111;--muted:#666}
             body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
             header{padding:12px 16px;background:var(--header);color:white}
             .wrap{max-width:980px;margin:18px auto;padding:12px}
-            .tabs{display:flex;gap:8px;margin-bottom:12px}
-            button.tab{padding:10px 14px;border:1px solid rgba(0,0,0,0.06);background:var(--panel);border-radius:6px}
-            button.tab.active{background:#111;color:white}
-            .panel{background:var(--panel);padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06)}
+            .tabs{display:flex;gap:8px;margin:0;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,0.6);position:fixed;left:50%;transform:translateX(-50%);bottom:12px;backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
+            button.tab{padding:10px 14px;border:0;background:transparent;color:var(--muted);border-radius:10px;font-weight:600}
+            button.tab.active{background:transparent;color:var(--text)}
+            .panel{background:var(--panel);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
             /* scanner overlay */
-            .scanner-wrap{position:relative;border-radius:8px;overflow:hidden}
+            .scanner-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
             .scanner-wrap video{display:block;width:100%;height:100%;object-fit:cover;background:#000}
             .scanner-overlay{position:absolute;inset:0;pointer-events:none}
-            .scanner-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80%;height:36%;border:2px dashed rgba(255,255,255,0.6);box-shadow:0 0 0 9999px rgba(0,0,0,0.25) inset;border-radius:8px}
-            .red-line{position:absolute;left:10%;right:10%;height:2px;top:50%;transform:translateY(-1px);background:rgba(255,0,0,0.95);box-shadow:0 0 8px rgba(255,0,0,0.6)}
+            .scanner-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:78%;height:34%;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.25) inset}
+            .scanner-guide:before,.scanner-guide:after{content:'';position:absolute;width:22px;height:22px;border:2px solid rgba(255,255,255,0.85);border-radius:6px}
+            .scanner-guide:before{left:-10px;top:-10px;border-right:none;border-bottom:none}
+            .scanner-guide:after{right:-10px;bottom:-10px;border-left:none;border-top:none}
+            .red-line{position:absolute;left:10%;right:10%;height:2px;top:50%;transform:translateY(-1px);background:rgba(255,0,0,0.9);box-shadow:0 0 8px rgba(255,0,0,0.4)}
             .scan-flash{position:absolute;inset:0;background:rgba(255,255,255,0.08);opacity:0;transition:opacity .18s ease}
             .scan-active .scan-flash{opacity:1}
             .row{display:flex;gap:12px;align-items:center}
@@ -36,7 +39,8 @@
                 .actions button{padding:10px 12px;font-size:15px}
             }
             .big{padding:12px 16px;border-radius:10px;font-size:16px}
-            input,textarea{width:100%;padding:8px;border:1px solid rgba(0,0,0,0.06);border-radius:6px;background:transparent;color:var(--text)}
+            input,textarea{width:100%;padding:12px;border:1px solid rgba(255,255,255,0.06);border-radius:10px;background:transparent;color:var(--text);outline:none}
+            input:focus,textarea:focus{box-shadow:0 0 0 3px rgba(128,128,128,0.08)}
             label{font-weight:600;margin-bottom:6px;display:block}
             .grid{display:grid;grid-template-columns:1fr 320px;gap:12px}
             img.thumb{max-width:100%;border-radius:6px;border:1px solid rgba(0,0,0,0.06)}
@@ -195,6 +199,7 @@
                         <div class="scanner-overlay">
                             <div class="scanner-guide"></div>
                             <div class="red-line" aria-hidden="true"></div>
+                            <button id="btn-torch" title="Toggle torch" style="position:absolute;right:12px;top:12px;z-index:10;padding:8px;border-radius:8px;border:none;background:rgba(0,0,0,0.6);color:white;backdrop-filter:blur(6px)">⚡</button>
                             <div class="scan-flash" id="scan-flash"></div>
                             <canvas id="capture-canvas" style="position:absolute;left:0;top:0;width:100%;height:100%;display:none;border-radius:8px"></canvas>
                         </div>
@@ -289,6 +294,10 @@
             // hidden canvas to crop video center for scanning (improves detection reliability)
             const scanCanvas = document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d');
+            let ocrLoopTimer = null;
+            let lastOcrDigits = '';
+            let barcodeConfirmCounts = {};
+            const CONFIRM_THRESHOLD = 2; // how many repeated barcode reads to accept without OCR
 
             // ZXing decode hints helper: prefer common linear barcode formats (can be adjusted)
             function getZXingHints(){
@@ -312,12 +321,13 @@
             // Dark mode toggle
             const btnDark = document.getElementById('btn-darkmode');
             function applyDarkMode(enabled){
-                if(enabled) document.documentElement.classList.add('dark-mode'); else document.documentElement.classList.remove('dark-mode');
+                // default is dark; toggling light-mode class
+                if(enabled) document.documentElement.classList.remove('light-mode'); else document.documentElement.classList.add('light-mode');
                 localStorage.setItem('dark-mode', enabled? '1':'0');
             }
             btnDark.onclick = ()=>{ const on = !(localStorage.getItem('dark-mode')==='1'); applyDarkMode(on); btnDark.textContent = on? 'Light':'Dark'; };
             // apply saved preference
-            if(localStorage.getItem('dark-mode')==='1'){ applyDarkMode(true); btnDark.textContent='Light'; }
+            if(localStorage.getItem('dark-mode')==='1'){ applyDarkMode(true); btnDark.textContent='Light'; } else { btnDark.textContent='Dark'; }
 
             // insecure origin check (show a short message; user will deploy to GitHub Pages)
             const insecureWarning = document.getElementById('insecure-warning');
@@ -727,6 +737,7 @@
                 opts = opts || {};
                 btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
                 scanningPaused = false; lastScanned = {value:null, ts:0};
+                barcodeConfirmCounts = {};
                 try{
                     // reset any previous reader to avoid freezing when switching cameras
                     try{ if(codeReader) { codeReader.reset(); } }catch(e){ console.warn('reset reader', e); }
@@ -737,12 +748,13 @@
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
-                                            // prefer ultrawide / back camera where available
-                                            const ultraRegex = /(ultra|ultrawide|0\.5x|0.5x|0\.3x|0.3x|wideangle|wide angle|ultra wide)/i;
+                                            // prefer back camera that is NOT ultra-wide (avoid 'ultra' labels)
+                                            const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x)/i;
                                             const backRegex = /(back|rear|environment|main)/i;
-                                            let p = devices.find(d=> ultraRegex.test(d.label) && backRegex.test(d.label));
-                                            if(!p) p = devices.find(d=> ultraRegex.test(d.label));
+                                            // try to find back camera without ultra keywords
+                                            let p = devices.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
                                             if(!p) p = devices.find(d=> backRegex.test(d.label));
+                                            if(!p) p = devices.find(d=> !ultraRegex.test(d.label));
                                             if(!p) p = devices[devices.length-1] || devices[0];
                                             preferred = p;
                                             // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
@@ -775,12 +787,24 @@
                                 scanCanvas.width = cw; scanCanvas.height = ch;
                                 scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
                             }catch(e){ /* ignore */ }
-                            handleDetectedBarcode(text, scanCanvas);
+                            // update confirm counts
+                            barcodeConfirmCounts[text] = (barcodeConfirmCounts[text]||0) + 1;
+                            // if OCR matches lastOcrDigits or confirm count reached, accept immediately
+                            if(lastOcrDigits && extractDigits(text) === lastOcrDigits){
+                                handleDetectedBarcode(text, scanCanvas);
+                            }else if(barcodeConfirmCounts[text] >= CONFIRM_THRESHOLD){
+                                handleDetectedBarcode(text, scanCanvas);
+                            }else{
+                                // not yet confirmed; keep scanning
+                                resultText.textContent = text + ' (waiting OCR)';
+                            }
                         }
                         if(err && !(err instanceof ZXing.NotFoundException)){
                             console.warn(err);
                         }
                     });
+                    // start OCR loop in parallel for cross-validation
+                    try{ startOCRLoop(); }catch(e){ console.warn('startOCRLoop failed', e); }
                 }catch(e){
                     console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
                     try{
@@ -789,6 +813,8 @@
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
                         // attach stream and ensure playsinline for mobile
                         video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
+                        // start OCR loop in parallel
+                        try{ startOCRLoop(); }catch(e){ console.warn('startOCRLoop failed', e); }
                         const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
                         if(!detector){console.warn('No BarcodeDetector available.');}
                         const scanLoop = async ()=>{
@@ -808,12 +834,16 @@
                                         scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
                                         const barcodes = await detector.detect(scanCanvas);
                                         if(barcodes && barcodes.length){
-                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} handleDetectedBarcode(v, scanCanvas); return;
+                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} 
+                                            barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0) + 1;
+                                            if(lastOcrDigits && extractDigits(v) === lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); return; }
+                                            if(barcodeConfirmCounts[v] >= CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); return; }
+                                            return;
                                         }
                                     }else{
                                         // fallback to direct detect on video element
                                         const barcodes = await detector.detect(video);
-                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} try{ scanCanvas.width = 1; scanCanvas.height = 1; /* ensure canvas exists */ }catch(e){} handleDetectedBarcode(v, scanCanvas); return; }
+                                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} try{ scanCanvas.width = 1; scanCanvas.height = 1; /* ensure canvas exists */ }catch(e){} barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0)+1; if(lastOcrDigits && extractDigits(v)===lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); } else if(barcodeConfirmCounts[v]>=CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); } return; }
                                     }
                                 }
                             }catch(err){console.warn(err)}
@@ -828,8 +858,12 @@
             function stopCameraScan(){
                 btnStartScan.disabled = false; btnStopScan.disabled = true; resultText.textContent='';
                 if(codeReader){ try{ codeReader.reset(); }catch(e){console.warn(e)} }
+                try{ if(torchOn){ setTorch(false); } }catch(e){}
                 if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null; }
                 scanningPaused = false; lastScanned = {value:null, ts:0};
+                // reset OCR loop and confirm counters
+                stopOCRLoop();
+                barcodeConfirmCounts = {};
             }
 
             // bind buttons
@@ -837,6 +871,32 @@
                 const ok = await requestCameraPermission();
                 if(ok) startCameraScan();
             };
+            // torch toggle (best-effort)
+            const btnTorch = document.getElementById('btn-torch');
+            let torchOn = false;
+            async function setTorch(on){
+                try{
+                    const stream = video.srcObject;
+                    if(!stream){ alert('Camera not started'); return; }
+                    const track = stream.getVideoTracks()[0];
+                    if(!track) return;
+                    const caps = track.getCapabilities ? track.getCapabilities() : {};
+                    if(caps.torch || (caps.torch === undefined && 'torch' in caps)){
+                        await track.applyConstraints({ advanced: [{ torch: on }] });
+                        torchOn = on; btnTorch.textContent = on? '🔦':'⚡';
+                        return;
+                    }
+                    // try ImageCapture as fallback
+                    if(window.ImageCapture){
+                        const ic = new ImageCapture(track);
+                        if(ic && typeof ic.setOptions === 'function'){
+                            await ic.setOptions({ torch: on }); torchOn = on; btnTorch.textContent = on? '🔦':'⚡'; return;
+                        }
+                    }
+                    alert('Torch not supported on this device/browser');
+                }catch(e){ console.warn('setTorch failed', e); alert('Torch error: ' + (e && e.message?e.message:String(e))); }
+            }
+            if(btnTorch) btnTorch.onclick = ()=>{ setTorch(!torchOn); };
             btnStopScan.onclick = stopCameraScan;
             const btnTestCamera = document.getElementById('btn-test-camera');
             // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
@@ -1006,6 +1066,35 @@
                     await ocrWorker.setParameters({ tessedit_char_whitelist: '0123456789' });
                 }catch(e){ console.warn('Tesseract init failed', e); ocrWorker = null; }
             }
+
+            async function startOCRLoop(){
+                try{ await initOCR(); }catch(e){}
+                if(ocrLoopTimer) return;
+                const runOnce = async ()=>{
+                    try{
+                        if(!video || video.paused || video.ended) return;
+                        const vw = video.videoWidth || video.clientWidth || 640;
+                        const vh = video.videoHeight || video.clientHeight || 480;
+                        const cw = Math.floor(vw * 0.6);
+                        const ch = Math.max(24, Math.floor(vh * 0.14));
+                        const sx = Math.max(0, Math.floor((vw - cw)/2));
+                        const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
+                        scanCanvas.width = cw; scanCanvas.height = ch;
+                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                        if(ocrWorker){
+                            const res = await ocrWorker.recognize(scanCanvas);
+                            const txt = (res && res.data && res.data.text) ? res.data.text : '';
+                            const digits = extractDigits(txt);
+                            if(digits && digits.length >= 6){ lastOcrDigits = digits; }
+                        }
+                    }catch(e){ /* ignore ocr errors */ }
+                };
+                ocrLoopTimer = setInterval(runOnce, 700);
+                // run immediately once
+                runOnce();
+            }
+
+            function stopOCRLoop(){ if(ocrLoopTimer){ clearInterval(ocrLoopTimer); ocrLoopTimer = null; lastOcrDigits=''; } }
             function extractDigits(s){ return (s||'').replace(/\D/g,''); }
             async function crossValidateBarcode(barcodeText, canvas){
                 try{
@@ -1037,6 +1126,7 @@
                     const res = await crossValidateBarcode(text, sourceCanvas);
                     if(res.match){
                         // validated — forward to product handler
+                        barcodeConfirmCounts[text] = 0;
                         onBarcodeValidated(text);
                     }else{
                         // not matched: show quick hint and keep scanning until someone matches
