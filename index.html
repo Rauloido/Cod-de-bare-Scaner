@@ -360,10 +360,10 @@
                         }catch(e){ /* some browsers don't support name:'camera' */ }
                     }
 
-                    // Request a minimal video stream to trigger permission prompt
+                    // Request a minimal generic video stream to trigger permission prompt
+                    // (don't force facingMode here so browser will prompt and we can enumerate devices)
                     setPermHint('Requesting camera permission...', '#0ea5e9');
-                    // force rear camera (exact) to avoid front camera selection
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: 'environment' } } });
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                     // got permission; immediately stop tracks since caller will reopen properly
                     stream.getTracks().forEach(t=>t.stop());
                     setPermHint('Camera permission granted. You can start scanning.', '#059669');
