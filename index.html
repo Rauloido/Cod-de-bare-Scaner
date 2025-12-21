@@ -318,6 +318,44 @@
                 }catch(e){ return undefined; }
             }
 
+            // Helper: start a BarcodeDetector-based scan loop on an existing media stream
+            let _detectorLoopHandle = null;
+            async function startDetectorOnStream(stream){
+                try{
+                    if(_detectorLoopHandle){ clearInterval(_detectorLoopHandle); _detectorLoopHandle = null; }
+                    video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
+                    const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
+                    if(!detector){ console.warn('No BarcodeDetector available for manual stream.'); return; }
+                    const loop = async ()=>{
+                        try{
+                            if(video.paused || video.ended) return;
+                            const vw = video.videoWidth || video.clientWidth;
+                            const vh = video.videoHeight || video.clientHeight;
+                            if(!vw||!vh) return;
+                            const cw = Math.floor(vw * 0.6);
+                            const ch = Math.max(24, Math.floor(vh * 0.14));
+                            const sx = Math.floor((vw - cw)/2);
+                            const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
+                            scanCanvas.width = cw; scanCanvas.height = ch;
+                            scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                            const barcodes = await detector.detect(scanCanvas);
+                            if(barcodes && barcodes.length){
+                                const v = barcodes[0].rawValue;
+                                const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return;
+                                lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} 
+                                barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0)+1;
+                                if(lastOcrDigits && extractDigits(v)===lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); return; }
+                                if(barcodeConfirmCounts[v]>=CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); return; }
+                            }
+                        }catch(e){ console.warn('detector loop error', e); }
+                    };
+                    // run loop on interval
+                    _detectorLoopHandle = setInterval(loop, 300);
+                    // run immediately
+                    loop();
+                }catch(e){ console.warn('startDetectorOnStream failed', e); }
+            }
+
             // Dark mode toggle
             const btnDark = document.getElementById('btn-darkmode');
             function applyDarkMode(enabled){
@@ -804,6 +842,39 @@
                             console.warn(err);
                         }
                     });
+
+                    // After ZXing starts, check whether the active track is front-facing.
+                    // On some iOS browsers the default stream may still be the front camera; if so,
+                    // stop ZXing and open an explicit back-camera stream and run the detector loop.
+                    setTimeout(async ()=>{
+                        try{
+                            const s = video.srcObject;
+                            if(!s) return;
+                            const track = s.getVideoTracks && s.getVideoTracks()[0];
+                            const settings = track && track.getSettings ? track.getSettings() : {};
+                            const facing = settings.facingMode || '';
+                            const label = track && track.label ? track.label : '';
+                            if(facing === 'user' || /front|user/i.test(label)){
+                                try{ codeReader.reset(); }catch(e){}
+                                // pick a preferred back camera deviceId if available
+                                const all = await navigator.mediaDevices.enumerateDevices();
+                                const vids = all.filter(d=>d.kind==='videoinput');
+                                let preferred = null;
+                                for(const d of vids){
+                                    const L = (d.label||'').toLowerCase();
+                                    if(/back|rear|environment|trase|posterior|espate/i.test(L)) { preferred = d; break; }
+                                }
+                                if(!preferred && vids.length>1){ preferred = vids[vids.length-1]; }
+                                if(preferred){
+                                    try{
+                                        const constraints = {video:{ deviceId: { exact: preferred.deviceId }, facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced:[{zoom:1.0}] }};
+                                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                                        await startDetectorOnStream(stream);
+                                    }catch(e){ console.warn('failed to open explicit back stream', e); }
+                                }
+                            }
+                        }catch(e){ console.warn('facing check failed', e); }
+                    }, 600);
                     // best-effort: enforce 1x zoom after stream attachment (avoid ultra-wide behavior)
                     setTimeout(()=>{
                         try{
