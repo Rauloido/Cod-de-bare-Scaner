@@ -55,6 +55,10 @@
         <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
         <!-- SheetJS kept for imports -->
         <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+        <!-- docx for Word export (per user request) -->
+        <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
+        <!-- Tesseract.js for OCR -->
+        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
     </head>
     <body>
         <header>
@@ -74,6 +78,7 @@
                 <button class="tab active" id="tab-generate">Generate</button>
                 <button class="tab" id="tab-scan">Scan</button>
                 <button class="tab" id="tab-products">Products</button>
+                <button class="tab" id="tab-receipt">Bon / Setări</button>
             </div>
 
             <div id="undo-toast" style="display:none;margin:10px 0;padding:10px;border-radius:6px;background:#fff3cd;border:1px solid #ffeeba;display:flex;align-items:center;gap:8px">
@@ -140,6 +145,40 @@
                 </div>
             </div>
 
+            <div id="panel-receipt" class="panel" style="display:none">
+                <div style="display:flex;gap:12px;flex-direction:column">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <strong>Bon / Setări</strong>
+                        <div class="actions">
+                            <button id="btn-download-receipt">Generare DOCX</button>
+                            <button id="btn-print-receipt">Print Bon</button>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:12px;align-items:flex-start">
+                        <div style="flex:1;max-width:420px">
+                            <h4>Date Firmă</h4>
+                            <label for="company-name">Nume Firmă</label>
+                            <input id="company-name" placeholder="Nume firmă">
+                            <label for="company-cui">CUI</label>
+                            <input id="company-cui" placeholder="CUI">
+                            <label for="company-reg">Nr. Reg. Com.</label>
+                            <input id="company-reg" placeholder="Nr. Reg. Com.">
+                            <label for="company-addr">Adresă</label>
+                            <input id="company-addr" placeholder="Adresă">
+                            <div style="margin-top:8px"><button id="btn-save-company">Salvează</button></div>
+                        </div>
+
+                        <div style="flex:1">
+                            <h4>Previzualizare Bon</h4>
+                            <div id="receipt-container" style="border:1px dashed #ddd;padding:12px;border-radius:6px;background:#fff;max-width:320px">
+                                <div id="receipt-preview"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="panel-scan" class="panel" style="display:none">
                 <div style="display:flex;gap:12px;flex-direction:column">
                     <div style="display:flex;gap:8px;align-items:center">
@@ -195,9 +234,11 @@
             const tabGenerate = document.getElementById('tab-generate');
             const tabScan = document.getElementById('tab-scan');
             const tabProducts = document.getElementById('tab-products');
+            const tabReceipt = document.getElementById('tab-receipt');
             const panelGenerate = document.getElementById('panel-generate');
             const panelScan = document.getElementById('panel-scan');
             const panelProducts = document.getElementById('panel-products');
+            const panelReceipt = document.getElementById('panel-receipt');
 
             const pname = document.getElementById('pname');
             const pdesc = document.getElementById('pdesc');
@@ -217,6 +258,15 @@
             const btnExport = document.getElementById('btn-export');
             const btnImport = document.getElementById('btn-import');
             const importFile = document.getElementById('import-file');
+            // Receipt / company elements
+            const companyNameEl = document.getElementById('company-name');
+            const companyCuiEl = document.getElementById('company-cui');
+            const companyRegEl = document.getElementById('company-reg');
+            const companyAddrEl = document.getElementById('company-addr');
+            const btnSaveCompany = document.getElementById('btn-save-company');
+            const btnDownloadReceipt = document.getElementById('btn-download-receipt');
+            const btnPrintReceipt = document.getElementById('btn-print-receipt');
+            const receiptPreview = document.getElementById('receipt-preview');
 
             // Scan elements
             const video = document.getElementById('video');
@@ -321,13 +371,29 @@
             }
 
             // Tabs (switch panels and manage camera)
-            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');tabProducts.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none';panelProducts.style.display='none'; stopCameraScan(); }
-            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');tabProducts.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';panelProducts.style.display='none';
+            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');tabProducts.classList.remove('active');tabReceipt && tabReceipt.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none';panelProducts.style.display='none';panelReceipt && (panelReceipt.style.display='none'); stopCameraScan(); }
+            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');tabProducts.classList.remove('active');tabReceipt && tabReceipt.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';panelProducts.style.display='none';panelReceipt && (panelReceipt.style.display='none');
                 // proactively request permission so browser shows prompt immediately
                 const ok = await requestCameraPermission();
                 if(ok){ startCameraScan(); }else{ /* permission not granted or blocked; user will see guidance in UI */ }
             }
-            tabProducts.onclick = ()=>{ tabProducts.classList.add('active'); tabGenerate.classList.remove('active'); tabScan.classList.remove('active'); panelProducts.style.display='block'; panelGenerate.style.display='none'; panelScan.style.display='none'; stopCameraScan(); }
+            tabProducts.onclick = ()=>{ tabProducts.classList.add('active'); tabGenerate.classList.remove('active'); tabScan.classList.remove('active'); tabReceipt && tabReceipt.classList.remove('active'); panelProducts.style.display='block'; panelGenerate.style.display='none'; panelScan.style.display='none'; panelReceipt && (panelReceipt.style.display='none'); stopCameraScan(); }
+            if(tabReceipt){
+                tabReceipt.onclick = ()=>{
+                    tabReceipt.classList.add('active');
+                    tabGenerate.classList.remove('active');
+                    tabScan.classList.remove('active');
+                    tabProducts.classList.remove('active');
+                    panelReceipt.style.display = 'block';
+                    panelGenerate.style.display = 'none';
+                    panelScan.style.display = 'none';
+                    panelProducts.style.display = 'none';
+                    stopCameraScan();
+                    // load settings and render preview
+                    loadCompanySettings();
+                    renderReceipt();
+                };
+            }
 
             // Load/save
             function loadProducts(){
@@ -463,6 +529,104 @@
                 const rand = Math.floor(Math.random()*900+100).toString();
                 return (t+rand).slice(-12);
             }
+
+            // ----- Receipt / Company settings -----
+            const COMPANY_KEY = 'company-settings-v1';
+            function loadCompanySettings(){
+                try{
+                    const raw = localStorage.getItem(COMPANY_KEY);
+                    if(!raw) return;
+                    const c = JSON.parse(raw);
+                    companyNameEl.value = c.name || '';
+                    companyCuiEl.value = c.cui || '';
+                    companyRegEl.value = c.reg || '';
+                    companyAddrEl.value = c.addr || '';
+                }catch(e){/* ignore */}
+            }
+            function saveCompanySettings(){
+                try{
+                    const c = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
+                    localStorage.setItem(COMPANY_KEY, JSON.stringify(c));
+                }catch(e){console.warn(e)}
+            }
+
+            function formatCurrency(v){ return '$' + (parseFloat(v)||0).toFixed(2); }
+
+            function renderReceipt(){
+                try{
+                    const now = new Date();
+                    const dateStr = now.toLocaleDateString(); const timeStr = now.toLocaleTimeString();
+                    const c = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
+                    let html = '';
+                    html += `<div style="text-align:center;font-weight:700;font-size:16px;margin-bottom:6px">BON FISCAL</div>`;
+                    html += `<div style="text-align:center;font-size:12px;margin-bottom:8px">${dateStr} ${timeStr}</div>`;
+                    if(c.name) html += `<div style="font-size:12px;text-align:center;margin-bottom:6px">${escapeHtml(c.name)}</div>`;
+                    if(c.cui) html += `<div style="font-size:11px;text-align:center">CUI: ${escapeHtml(c.cui)}</div>`;
+                    if(c.reg) html += `<div style="font-size:11px;text-align:center">Reg: ${escapeHtml(c.reg)}</div>`;
+                    if(c.addr) html += `<div style="font-size:11px;text-align:center;margin-bottom:8px">${escapeHtml(c.addr)}</div>`;
+                    html += '<div style="border-top:1px dashed #ddd;margin:6px 0"></div>';
+                    html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+                    html += '<thead><tr><th style="text-align:left">Produs</th><th style="text-align:center">Cant.</th><th style="text-align:right">Preț</th><th style="text-align:right">Subtotal</th></tr></thead>';
+                    html += '<tbody>';
+                    let total = 0;
+                    cart.forEach(it=>{
+                        const qty = Number(it.qty)||0; const price = parseFloat(it.price)||0; const sub = qty * price; total += sub;
+                        html += `<tr><td>${escapeHtml(it.name)}</td><td style="text-align:center">${qty}</td><td style="text-align:right">${formatCurrency(price)}</td><td style="text-align:right">${formatCurrency(sub)}</td></tr>`;
+                    });
+                    html += '</tbody>';
+                    html += '</table>';
+                    html += '<div style="border-top:1px dashed #ddd;margin:8px 0"></div>';
+                    html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px"><div>Total</div><div>${formatCurrency(total)}</div></div>`;
+                    receiptPreview.innerHTML = html;
+                }catch(e){ console.warn('renderReceipt failed', e); }
+            }
+
+            if(btnSaveCompany) btnSaveCompany.onclick = ()=>{ saveCompanySettings(); renderReceipt(); alert('Company settings saved'); };
+            if(btnDownloadReceipt) btnDownloadReceipt.onclick = async ()=>{
+                try{
+                    // use docx to build a simple receipt document
+                    if(!window.docx){ alert('docx library not loaded'); return; }
+                    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } = window.docx;
+                    const docChildren = [];
+                    const now = new Date();
+                    docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [ new TextRun({ text: 'BON FISCAL', bold: true }) ] }));
+                    docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [ new TextRun({ text: now.toLocaleString() }) ] }));
+                    const cmp = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
+                    if(cmp.name) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun(cmp.name) ] }));
+                    if(cmp.cui) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun('CUI: ' + cmp.cui) ] }));
+                    if(cmp.reg) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun('Reg: ' + cmp.reg) ] }));
+                    if(cmp.addr) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun(cmp.addr) ] }));
+                    docChildren.push(new Paragraph({ children:[ new TextRun('') ] }));
+
+                    // table header
+                    const rows = [];
+                    rows.push(new TableRow({ children: [ new TableCell({ children:[ new Paragraph('Produs') ] }), new TableCell({ children:[ new Paragraph('Cant.') ] }), new TableCell({ children:[ new Paragraph('Preț') ] }), new TableCell({ children:[ new Paragraph('Subtotal') ] }) ] }));
+                    let total = 0;
+                    cart.forEach(it=>{
+                        const qty = Number(it.qty)||0; const price = parseFloat(it.price)||0; const sub = qty*price; total += sub;
+                        rows.push(new TableRow({ children: [ new TableCell({ children:[ new Paragraph(it.name) ] }), new TableCell({ children:[ new Paragraph(String(qty)) ] }), new TableCell({ children:[ new Paragraph(formatCurrency(price)) ] }), new TableCell({ children:[ new Paragraph(formatCurrency(sub)) ] }) ] }));
+                    });
+                    const table = new Table({ rows });
+                    docChildren.push(table);
+                    docChildren.push(new Paragraph({ children:[ new TextRun('') ] }));
+                    docChildren.push(new Paragraph({ alignment: AlignmentType.RIGHT, children:[ new TextRun({ text: 'Total: ' + formatCurrency(total), bold: true }) ] }));
+
+                    const doc = new Document({ sections: [{ children: docChildren }] });
+                    const blob = await Packer.toBlob(doc);
+                    saveAs(blob, 'bon.docx');
+                }catch(e){ console.error('DOCX generation failed', e); alert('Generare DOCX eșuată: ' + (e && e.message ? e.message : e)); }
+            };
+            if(btnPrintReceipt) btnPrintReceipt.onclick = ()=>{
+                try{
+                    const outer = document.getElementById('receipt-container').outerHTML;
+                    const win = window.open('', '_blank', 'width=420,height=720');
+                    const styles = `<style>body{font-family:Arial,Helvetica,sans-serif;padding:8px}table{width:100%;font-size:12px;border-collapse:collapse}th,td{padding:4px} .center{text-align:center}</style>`;
+                    win.document.write('<html><head><title>Bon</title>'+styles+'</head><body>'+outer+'</body></html>');
+                    win.document.close();
+                    win.focus();
+                    setTimeout(()=>{ win.print(); /* win.close(); */ }, 250);
+                }catch(e){ console.error(e); alert('Print failed: '+(e && e.message?e.message:String(e))); }
+            };
 
                         // Excel export with embedded barcode images using ExcelJS
                         btnExport.onclick = async ()=>{
@@ -600,7 +764,18 @@
                             scanningPaused = true; setTimeout(()=>{scanningPaused=false}, SCAN_COOLDOWN);
                             resultText.textContent = text;
                             const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
-                            onBarcodeScanned(text);
+                            // draw a small crop around the red-line area for OCR cross-validation
+                            try{
+                                const vw = video.videoWidth || video.clientWidth || 640;
+                                const vh = video.videoHeight || video.clientHeight || 480;
+                                const cw = Math.floor(vw * 0.6);
+                                const ch = Math.max(32, Math.floor(vh * 0.16));
+                                const sx = Math.max(0, Math.floor((vw - cw)/2));
+                                const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
+                                scanCanvas.width = cw; scanCanvas.height = ch;
+                                scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                            }catch(e){ /* ignore */ }
+                            handleDetectedBarcode(text, scanCanvas);
                         }
                         if(err && !(err instanceof ZXing.NotFoundException)){
                             console.warn(err);
@@ -633,12 +808,12 @@
                                         scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
                                         const barcodes = await detector.detect(scanCanvas);
                                         if(barcodes && barcodes.length){
-                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return;
+                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} handleDetectedBarcode(v, scanCanvas); return;
                                         }
                                     }else{
                                         // fallback to direct detect on video element
                                         const barcodes = await detector.detect(video);
-                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} onBarcodeScanned(v); return; }
+                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} try{ scanCanvas.width = 1; scanCanvas.height = 1; /* ensure canvas exists */ }catch(e){} handleDetectedBarcode(v, scanCanvas); return; }
                                     }
                                 }
                             }catch(err){console.warn(err)}
@@ -716,13 +891,13 @@
                         try{
                             const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
                             const barcodes = await detector.detect(captureCanvas);
-                            if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; onBarcodeScanned(v); found = true; }
+                            if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; handleDetectedBarcode(v, captureCanvas); found = true; }
                         }catch(e){ console.warn('BarcodeDetector on canvas failed', e); }
                     }
                     if(!found){
                         // fallback to ZXing decode from the canvas image
                         const tryZX = await decodeCanvasWithZXing(captureCanvas);
-                        if(tryZX){ resultText.textContent = tryZX; onBarcodeScanned(tryZX); found = true; }
+                        if(tryZX){ resultText.textContent = tryZX; handleDetectedBarcode(tryZX, captureCanvas); found = true; }
                     }
                     if(!found){ resultText.textContent = '(No code detected in frozen image)'; }
                 }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
@@ -818,7 +993,60 @@
             // also sync when video metadata loads
             video.addEventListener('loadedmetadata', ()=>{ syncCanvasSizes(); });
 
-            function onBarcodeScanned(value){
+            // ----- OCR + Cross-validation (Barcode vs OCR digits) -----
+            let ocrWorker = null;
+            async function initOCR(){
+                if(typeof Tesseract === 'undefined') return;
+                if(ocrWorker) return;
+                try{
+                    ocrWorker = Tesseract.createWorker({ logger: m=>{} });
+                    await ocrWorker.load();
+                    await ocrWorker.loadLanguage('eng');
+                    await ocrWorker.initialize('eng');
+                    await ocrWorker.setParameters({ tessedit_char_whitelist: '0123456789' });
+                }catch(e){ console.warn('Tesseract init failed', e); ocrWorker = null; }
+            }
+            function extractDigits(s){ return (s||'').replace(/\D/g,''); }
+            async function crossValidateBarcode(barcodeText, canvas){
+                try{
+                    await initOCR();
+                    if(!ocrWorker) return { match:false, barcodeDigits: extractDigits(barcodeText), ocrDigits: '' };
+                    const res = await ocrWorker.recognize(canvas);
+                    const ocrText = (res && res.data && res.data.text) ? res.data.text : (res && res.text ? res.text : '');
+                    const ocrDigits = extractDigits(ocrText);
+                    const barcodeDigits = extractDigits(barcodeText);
+                    return { match: barcodeDigits && ocrDigits && barcodeDigits === ocrDigits, barcodeDigits, ocrDigits };
+                }catch(e){ console.warn('crossValidate error', e); return { match:false, barcodeDigits: extractDigits(barcodeText), ocrDigits: '' }; }
+            }
+
+            async function handleDetectedBarcode(text, sourceCanvas){
+                try{
+                    // ensure we have a small crop canvas to OCR; if none provided, attempt to crop around red line
+                    if(!sourceCanvas || (sourceCanvas.width===0 && sourceCanvas.height===0)){
+                        const vw = video.videoWidth || video.clientWidth || 640;
+                        const vh = video.videoHeight || video.clientHeight || 480;
+                        const cw = Math.floor(vw * 0.6);
+                        const ch = Math.max(32, Math.floor(vh * 0.16));
+                        const sx = Math.max(0, Math.floor((vw - cw)/2));
+                        // focus crop slightly below center where human-readable digits often sit
+                        const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
+                        scanCanvas.width = cw; scanCanvas.height = ch;
+                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
+                        sourceCanvas = scanCanvas;
+                    }
+                    const res = await crossValidateBarcode(text, sourceCanvas);
+                    if(res.match){
+                        // validated — forward to product handler
+                        onBarcodeValidated(text);
+                    }else{
+                        // not matched: show quick hint and keep scanning until someone matches
+                        resultText.textContent = text + ' (OCR mismatch)';
+                        console.log('Cross-validation mismatch', res);
+                    }
+                }catch(e){ console.warn('handleDetectedBarcode error', e); }
+            }
+
+            function onBarcodeValidated(value){
                 const p = products.find(x=>x.code==value);
                 if(p){
                     // show product details and add-to-cart controls
@@ -870,7 +1098,7 @@
             const CART_KEY = 'cart-db-v1';
             let cart = [];
             function loadCart(){ try{ const raw = localStorage.getItem(CART_KEY); cart = raw?JSON.parse(raw):[]; }catch(e){ cart=[] } renderCart(); }
-            function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); renderCart(); }
+            function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); renderCart(); renderReceipt(); }
             function renderCart(){
                 const list = document.getElementById('cart-list'); const totalEl = document.getElementById('cart-total');
                 if(!list) return;
@@ -890,6 +1118,8 @@
                     total += (pnum * (it.qty||1));
                 });
                 totalEl.textContent = '$' + total.toFixed(2);
+                // also update receipt preview when cart changes
+                try{ renderReceipt(); }catch(e){}
             }
             function addToCart(code, qty){
                 try{
@@ -908,6 +1138,8 @@
             const btnClearCart = document.getElementById('btn-clear-cart'); if(btnClearCart) btnClearCart.onclick = ()=>{ if(confirm('Clear cart?')){ cart=[]; saveCart(); } };
             // load cart on start
             loadCart();
+            // preload saved company settings for receipt preview
+            try{ loadCompanySettings(); renderReceipt(); }catch(e){}
 
             // show PWA install prompt guidance
             window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.deferredPrompt = e; });
