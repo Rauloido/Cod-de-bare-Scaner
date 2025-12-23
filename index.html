@@ -875,6 +875,30 @@
                             }
                         }catch(e){ console.warn('facing check failed', e); }
                     }, 600);
+                    // After stream attachment, verify torch capability but avoid opening additional streams
+                    // which can interfere with live decoding (especially on iOS). We only check the
+                    // active track capabilities and inform the user if torch isn't available.
+                    setTimeout(()=>{
+                        try{
+                            const s = video.srcObject;
+                            if(!s) return;
+                            const track = s.getVideoTracks && s.getVideoTracks()[0];
+                            if(!track) return;
+                            const caps = track.getCapabilities ? track.getCapabilities() : {};
+                            if(caps && caps.torch){
+                                // torch supported — no action needed
+                                return;
+                            }
+                            // If running on iOS Safari, torch is generally unsupported in the browser.
+                            const ua = navigator.userAgent || '';
+                            if(/iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS|Chrome/i.test(ua)){
+                                setPermHint('Flash/torch is not supported by iOS Safari.', '#b91c1c');
+                                return;
+                            }
+                            // Inform user that the current camera doesn't expose torch capability.
+                            setPermHint('Current camera does not expose flash/torch capability in this browser.', '#b91c1c');
+                        }catch(e){ console.warn('torch-capability check failed', e); }
+                    }, 900);
                     // Do not force 1x zoom — allow ultra-wide stream characteristics so scanning uses that camera.
                     // If needed, device-specific zoom adjustments could be applied here, but we avoid forcing zoom.
                     // start OCR loop in parallel for cross-validation
