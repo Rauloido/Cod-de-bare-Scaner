@@ -38,6 +38,16 @@
                 button.tab{flex:1;padding:14px}
                 .actions button{padding:10px 12px;font-size:15px}
             }
+            /* Desktop / cashier layout */
+            @media(min-width:900px){
+                /* make scan panel a two-column layout: scanner left, controls/cart right */
+                #panel-scan > div{ display:flex; flex-direction:row; gap:18px; align-items:flex-start }
+                .scanner-wrap{ flex:0 0 64%; height:560px }
+                #cart-panel{ flex:0 0 32%; max-height:560px; overflow:auto }
+                #scan-result{ order:2; width:100%; }
+                .scanner-wrap video{ object-fit:contain }
+                .tabs{ left:12%; transform:none; bottom:18px }
+            }
             .big{padding:12px 16px;border-radius:10px;font-size:16px}
             input,textarea{width:100%;padding:12px;border:1px solid rgba(255,255,255,0.06);border-radius:10px;background:transparent;color:var(--text);outline:none}
             input:focus,textarea:focus{box-shadow:0 0 0 3px rgba(128,128,128,0.08)}
@@ -211,12 +221,17 @@
                         </div>
                     </div>
                     <div id="cart-panel" style="margin-top:12px;padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:var(--panel)">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>Cart</strong><div><button id="btn-clear-cart">Clear Cart</button></div></div>
-                        <div id="cart-list" style="max-height:220px;overflow:auto;margin-bottom:8px"></div>
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>Cart</strong><div style="display:flex;gap:8px"><button id="btn-clear-cart">Clear Cart</button><button id="btn-checkout">Checkout</button></div></div>
+                        <div id="cart-list" style="max-height:320px;overflow:auto;margin-bottom:8px"></div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                             <div><strong>Total</strong></div>
                             <div id="cart-total" style="font-size:18px;font-weight:700">$0.00</div>
                         </div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+                            <label style="font-weight:600">Paid:</label>
+                            <input id="payment-amount" type="number" min="0" step="0.01" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd" placeholder="Amount paid">
+                        </div>
+                        <div style="font-size:13px;color:var(--muted)">After checkout the receipt will be generated and cart cleared.</div>
                     </div>
                 </div>
             </div>
@@ -353,14 +368,16 @@
 
             // Dark mode toggle
             const btnDark = document.getElementById('btn-darkmode');
-            function applyDarkMode(enabled){
-                // default is dark; toggling light-mode class
-                if(enabled) document.documentElement.classList.remove('light-mode'); else document.documentElement.classList.add('light-mode');
-                localStorage.setItem('dark-mode', enabled? '1':'0');
+            function setLightTheme(isLight){
+                if(isLight) document.documentElement.classList.add('light-mode'); else document.documentElement.classList.remove('light-mode');
+                localStorage.setItem('theme', isLight? 'light':'dark');
             }
-            btnDark.onclick = ()=>{ const on = !(localStorage.getItem('dark-mode')==='1'); applyDarkMode(on); btnDark.textContent = on? 'Light':'Dark'; };
-            // apply saved preference
-            if(localStorage.getItem('dark-mode')==='1'){ applyDarkMode(true); btnDark.textContent='Light'; } else { btnDark.textContent='Dark'; }
+            // initialize from storage (default to light-mode for PC-friendly UI)
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            const initialIsLight = (savedTheme === 'light');
+            setLightTheme(initialIsLight);
+            btnDark.textContent = initialIsLight ? 'Light' : 'Dark';
+            btnDark.onclick = ()=>{ const isLight = !(document.documentElement.classList.contains('light-mode')); setLightTheme(isLight); btnDark.textContent = isLight ? 'Light' : 'Dark'; };
 
             // insecure origin check (show a short message; user will deploy to GitHub Pages)
             const insecureWarning = document.getElementById('insecure-warning');
@@ -785,15 +802,14 @@
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
-                                                                // prefer an ultra-wide back camera when available (user requested ultrawide)
-                                                                const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
-                                                                const backRegex = /(back|rear|environment|main)/i;
-                                                                // try to find a back-facing ultra-wide camera first, then any ultra-wide, then any back camera
-                                                                let p = devices.find(d=> backRegex.test(d.label) && ultraRegex.test(d.label));
-                                                                if(!p) p = devices.find(d=> ultraRegex.test(d.label));
-                                                                if(!p) p = devices.find(d=> backRegex.test(d.label));
-                                                                if(!p) p = devices[devices.length-1] || devices[0];
-                                                                preferred = p;
+                                                                                    // prefer a back-facing main camera (likely has torch) and avoid ultrawide which often lacks torch
+                                                                                    const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
+                                                                                    const backRegex = /(back|rear|environment|main)/i;
+                                                                                    // try to find a back camera that is NOT ultrawide (likely main camera)
+                                                                                    let p = devices.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
+                                                                                    if(!p) p = devices.find(d=> backRegex.test(d.label));
+                                                                                    if(!p) p = devices[devices.length-1] || devices[0];
+                                                                                    preferred = p;
                                             // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
                                             if(cameraSelect){
                                                 cameraSelect.innerHTML = '';
@@ -1386,6 +1402,28 @@
             const btnClearCart = document.getElementById('btn-clear-cart'); if(btnClearCart) btnClearCart.onclick = ()=>{ if(confirm('Clear cart?')){ cart=[]; saveCart(); } };
             // load cart on start
             loadCart();
+            // Checkout handler: generate receipt and clear cart
+            const btnCheckout = document.getElementById('btn-checkout');
+            const paymentAmountInput = document.getElementById('payment-amount');
+            if(btnCheckout){ btnCheckout.onclick = ()=>{
+                try{
+                    if(!cart || !cart.length){ alert('Cart is empty'); return; }
+                    // compute total
+                    let total = 0; cart.forEach(it=>{ total += ((parseFloat(it.price)||0) * (it.qty||1)); });
+                    const paid = parseFloat(paymentAmountInput && paymentAmountInput.value ? paymentAmountInput.value : String(total));
+                    if(isNaN(paid)){ alert('Enter a valid paid amount'); return; }
+                    const change = Math.max(0, paid - total);
+                    // render receipt and include paid/change info in preview
+                    try{ renderReceipt(); }catch(e){ console.warn(e); }
+                    // show change in receipt preview area
+                    try{ const el = document.getElementById('receipt-preview'); if(el){ const foot = document.createElement('div'); foot.style.marginTop='8px'; foot.innerHTML = `<div style="display:flex;justify-content:space-between;font-weight:700"><div>Paid</div><div>$${paid.toFixed(2)}</div></div><div style="display:flex;justify-content:space-between;font-weight:700"><div>Change</div><div>$${change.toFixed(2)}</div></div>`; el.appendChild(foot); } }catch(e){}
+                    // open receipt tab for printing
+                    try{ if(tabReceipt){ tabReceipt.click(); } }catch(e){}
+                    // clear cart after checkout
+                    cart = []; saveCart();
+                    alert('Checkout complete. Change: $' + change.toFixed(2));
+                }catch(e){ console.error('Checkout failed', e); alert('Checkout error: ' + (e && e.message? e.message : String(e))); }
+            }; }
             // preload saved company settings for receipt preview
             try{ loadCompanySettings(); renderReceipt(); }catch(e){}
 
