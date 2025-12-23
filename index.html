@@ -351,8 +351,8 @@
                 const videoInputs = devices.filter(d => d.kind === 'videoinput');
 
                 if(videoInputs.length === 0) {
+                    cameraStatus.innerText = 'Nicio cameră găsită';
                     cameraError.innerText = 'Nu au fost detectate camere.';
-                    videoSelect.innerHTML = '<option disabled selected>Fără camere</option>';
                     return;
                 }
 
@@ -367,10 +367,12 @@
                 if(permissionGranted && selectedDeviceId) {
                     cameraStatus.innerText = 'Pornită';
                     cameraError.innerText = '';
+                    if(allowBtn) allowBtn.style.display = 'none';
                     try { startScanning(selectedDeviceId); } catch(e) { console.error(e); cameraError.innerText = 'Eroare la pornire.'; }
                 } else if(videoInputs.length > 0) {
                     cameraStatus.innerText = 'Așteaptă permisiune';
                     cameraError.innerText = 'Permite accesul la cameră pentru a porni automat.';
+                    if(allowBtn) allowBtn.style.display = 'inline-flex';
                 } else {
                     cameraStatus.innerText = 'Nicio cameră găsită';
                     cameraError.innerText = 'Nu există dispozitive video.';
