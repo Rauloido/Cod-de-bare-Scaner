@@ -1,1434 +1,727 @@
 <!doctype html>
-<html lang="en">
+<html lang="ro">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Barcode Generator & Scanner</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+        <meta name="theme-color" content="#0f172a">
+        <title>Professional POS - Master Edition</title>
         <link rel="manifest" href="manifest.json">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <meta name="apple-mobile-web-app-title" content="Barcode App">
-        <link rel="apple-touch-icon" href="icon-192.png">
         <style>
-            :root{--bg:#121212;--header:#000000;--panel:#1e1e1e;--text:#ffffff;--muted:#808080}
-            .light-mode{--bg:#f6f7fb;--header:#132b52;--panel:#ffffff;--text:#111;--muted:#666}
-            body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
-            header{padding:12px 16px;background:var(--header);color:white}
-            .wrap{max-width:980px;margin:18px auto;padding:12px}
-            .tabs{display:flex;gap:8px;margin:0;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,0.6);position:fixed;left:50%;transform:translateX(-50%);bottom:12px;backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
-            button.tab{padding:10px 14px;border:0;background:transparent;color:var(--muted);border-radius:10px;font-weight:600}
-            button.tab.active{background:transparent;color:var(--text)}
-            .panel{background:var(--panel);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
-            /* scanner overlay */
-            .scanner-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-            .scanner-wrap video{display:block;width:100%;height:100%;object-fit:cover;background:#000}
-            .scanner-overlay{position:absolute;inset:0;pointer-events:none}
-            .scanner-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:78%;height:34%;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.25) inset}
-            .scanner-guide:before,.scanner-guide:after{content:'';position:absolute;width:22px;height:22px;border:2px solid rgba(255,255,255,0.85);border-radius:6px}
-            .scanner-guide:before{left:-10px;top:-10px;border-right:none;border-bottom:none}
-            .scanner-guide:after{right:-10px;bottom:-10px;border-left:none;border-top:none}
-            .red-line{position:absolute;left:10%;right:10%;height:2px;top:50%;transform:translateY(-1px);background:rgba(255,0,0,0.9);box-shadow:0 0 8px rgba(255,0,0,0.4)}
-            .scan-flash{position:absolute;inset:0;background:rgba(255,255,255,0.08);opacity:0;transition:opacity .18s ease}
-            .scan-active .scan-flash{opacity:1}
-            .row{display:flex;gap:12px;align-items:center}
-            /* mobile-optimized controls */
-            @media(max-width:600px){
-                .grid{grid-template-columns:1fr}
-                .tabs{flex-direction:row}
-                button.tab{flex:1;padding:14px}
-                .actions button{padding:10px 12px;font-size:15px}
+            :root {
+                --bg: #0f172a; --card: #1e293b; --accent: #3b82f6; --success: #10b981;
+                --text: #f8fafc; --muted: #94a3b8; --danger: #f43f5e; --warning: #f59e0b;
+                --border: rgba(255,255,255,0.1);
+                --radius: 12px;
             }
-            /* Desktop / cashier layout */
-            @media(min-width:900px){
-                /* make scan panel a two-column layout: scanner left, controls/cart right */
-                #panel-scan > div{ display:flex; flex-direction:row; gap:18px; align-items:flex-start }
-                .scanner-wrap{ flex:0 0 64%; height:560px }
-                #cart-panel{ flex:0 0 32%; max-height:560px; overflow:auto }
-                #scan-result{ order:2; width:100%; }
-                .scanner-wrap video{ object-fit:contain }
-                .tabs{ left:12%; transform:none; bottom:18px }
+
+            /* Modul Touch - Ajustări dinamice */
+            body.touch-mode { --radius: 20px; font-size: 16px; }
+            body.touch-mode .btn { padding: 18px; font-size: 1.1rem; margin: 6px 0; }
+            body.touch-mode input, body.touch-mode select { padding: 16px; font-size: 1.1rem; }
+            body.touch-mode .cart-item { padding: 15px; }
+
+            body { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--text); transition: all 0.3s ease; height: 100vh; overflow: hidden; }
+            
+            /* Layout general */
+            header { background: #000; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); height: 50px; }
+            .logo-placeholder { height: 35px; width: 35px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; font-weight: bold; font-size: 0.8rem; }
+            .logo-placeholder img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+            .main-grid { display: grid; grid-template-columns: 1fr 400px; gap: 20px; height: calc(100vh - 71px); max-width: 1800px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+            
+            .content { overflow-y: auto; padding-right: 5px; height: 100%; }
+
+            /* Panouri */
+            .panel { display: none; animation: fadeIn 0.3s ease; }
+            .panel.active { display: block; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+            h3 { border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 0; color: var(--accent); }
+
+            /* Scanner */
+            .scanner-wrapper { position: relative; width: 100%; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+            #video { width: 100%; height: 100%; object-fit: cover; }
+            .laser { position: absolute; width: 90%; left: 5%; height: 2px; background: var(--danger); top: 50%; box-shadow: 0 0 15px var(--danger); animation: scanLine 2s infinite ease-in-out; z-index: 2; }
+            @keyframes scanLine { 0%, 100% { top: 10%; opacity: 0.5; } 50% { top: 90%; opacity: 1; } }
+            
+            /* Efect scanare reușită */
+            .scan-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(16, 185, 129, 0.3); z-index: 10; display: none; }
+
+            /* Controale Cameră */
+            .camera-controls { background: var(--card); padding: 10px; border-radius: var(--radius); margin-top: 10px; border: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+
+            /* Coș */
+            .cart-sidebar { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+            .cart-items { flex: 1; overflow-y: auto; padding: 15px; scroll-behavior: smooth; }
+            .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.2); margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border); transition: 0.2s; }
+            .cart-item:hover { background: rgba(255,255,255,0.05); }
+
+            /* Istoric */
+            .history-item { background: var(--card); padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+
+            /* Formular & Butoane */
+            .btn { border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: white; padding: 12px 20px; font-size: 0.95rem; }
+            .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+            .btn:active { transform: translateY(1px); }
+            .btn-primary { background: var(--accent); }
+            .btn-success { background: var(--success); }
+            .btn-danger { background: var(--danger); }
+            .btn-warning { background: var(--warning); color: #000; }
+            
+            input, select, textarea { background: #0f172a; border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; width: 100%; box-sizing: border-box; outline: none; transition: 0.2s; }
+            input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+
+            /* Navigation */
+            .nav-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px); padding: 6px; border-radius: 50px; display: flex; gap: 5px; z-index: 1000; border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            .nav-item { padding: 12px 24px; border-radius: 40px; border: none; background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
+            .nav-item.active { background: var(--accent); color: white; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+            .nav-item:hover:not(.active) { color: white; }
+
+            /* Responsive */
+            @media (max-width: 1024px) {
+                .main-grid { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; padding-bottom: 100px; }
+                .cart-sidebar { height: 500px; margin-top: 20px; }
             }
-            .big{padding:12px 16px;border-radius:10px;font-size:16px}
-            input,textarea{width:100%;padding:12px;border:1px solid rgba(255,255,255,0.06);border-radius:10px;background:transparent;color:var(--text);outline:none}
-            input:focus,textarea:focus{box-shadow:0 0 0 3px rgba(128,128,128,0.08)}
-            label{font-weight:600;margin-bottom:6px;display:block}
-            .grid{display:grid;grid-template-columns:1fr 320px;gap:12px}
-            img.thumb{max-width:100%;border-radius:6px;border:1px solid rgba(0,0,0,0.06)}
-            .product{border-bottom:1px solid rgba(0,0,0,0.06);padding:8px 0}
-            .actions{display:flex;gap:8px}
-            small.hint{color:var(--muted)}
-            footer{padding:14px;text-align:center;color:var(--muted)}
-            #insecure-warning{background:#ffefef;color:#801010;padding:10px;border-radius:6px;margin-bottom:12px;border:1px solid #ffd6d6}
+
+            /* Printing */
+            #print-receipt { display: none; }
+            @media print {
+                body * { display: none !important; }
+                #print-receipt { display: block !important; width: 80mm; color: #000 !important; background: #fff !important; padding: 2mm; font-family: 'Courier New', monospace; font-size: 12px; }
+                #print-receipt * { display: block !important; }
+            }
         </style>
-        <!-- Barcode generator -->
-        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-        <!-- ZXing for scanning (browser UMD) -->
-        <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
-        <!-- ExcelJS + FileSaver for exporting images into XLSX -->
-        <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-        <!-- SheetJS kept for imports -->
-        <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-        <!-- docx for Word export (per user request) -->
-        <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
-        <!-- Tesseract.js for OCR -->
-        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
     </head>
     <body>
-        <header>
-            <div style="max-width:980px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
-                <div><strong>Barcode Generator & Scanner</strong></div>
-                <div style="display:flex;gap:10px;align-items:center">
-                  <div style="font-size:13px;opacity:.95">Two modes: Generate ↔ Scan • Works on phones</div>
-                  <button id="btn-darkmode" title="Toggle dark mode" style="padding:6px 10px;border-radius:6px;border:none;background:rgba(255,255,255,0.15);color:white">Dark</button>
+
+    <header>
+        <div style="display:flex; align-items:center; gap:15px">
+            <div id="logo-container" class="logo-placeholder">POS</div>
+            <div>
+                <h2 id="header-company-name" style="margin:0; font-size:1.1rem">Smart Business POS</h2>
+                <small id="connection-status" style="color:var(--success); font-size:0.7rem">● Online</small>
+            </div>
+        </div>
+        <div id="clock" style="font-family:monospace; color:var(--muted); font-weight:bold"></div>
+    </header>
+
+    <main class="main-grid">
+        <div class="content">
+            
+            <div id="tab-sale" class="panel active">
+                <div class="scanner-wrapper">
+                    <video id="video"></video>
+                    <div class="laser"></div>
+                    <div id="scan-feedback" class="scan-overlay"></div>
+                </div>
+                
+                <div class="camera-controls">
+                    <span style="color:var(--muted)">📸 Sursă Video:</span>
+                    <select id="camera-select" onchange="changeCamera()">
+                        <option value="" disabled selected>Se încarcă camerele...</option>
+                    </select>
+                </div>
+
+                <div style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:15px">
+                    <button class="btn btn-primary" onclick="manualAddPrompt()">
+                        <span>⌨️</span> Cod Manual
+                    </button>
+                    <button class="btn btn-primary" onclick="searchPrompt()">
+                        <span>🔍</span> Caută Nume
+                    </button>
                 </div>
             </div>
-        </header>
-        <main class="wrap">
-            <div id="insecure-warning" style="display:none">
-                <strong>Camera blocked:</strong> This page must be served over HTTPS (for example, via GitHub Pages) or from <code>localhost</code> for camera access. Deploy to GitHub Pages or serve over HTTPS to enable camera permissions.
+
+            <div id="tab-inventory" class="panel">
+                <div style="display:flex; justify-content:space-between; align-items:center">
+                    <h3>📦 Gestiune Stoc</h3>
+                    <span id="items-count" style="background:var(--card); padding:5px 10px; border-radius:20px; font-size:0.8rem">0 produse</span>
+                </div>
+                
+                <div style="background:var(--card); padding:20px; border-radius:var(--radius); border:1px solid var(--border); margin-bottom:20px">
+                    <div style="display:grid; grid-template-columns: 1fr 2fr 1fr auto; gap:10px; align-items:end">
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--muted)">Cod Bare</label>
+                            <input type="text" id="db-code" placeholder="Scan sau tastare...">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--muted)">Nume Produs</label>
+                            <input type="text" id="db-name" placeholder="Ex: Cola 0.5L">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--muted)">Preț (RON)</label>
+                            <input type="number" id="db-price" placeholder="0.00" step="0.01">
+                        </div>
+                        <button class="btn btn-success" style="height:45px" onclick="saveToInventory()">Salvare</button>
+                    </div>
+                </div>
+                <div id="inventory-list" style="display:grid; gap:10px;"></div>
             </div>
-            <div class="tabs">
-                <button class="tab active" id="tab-generate">Generate</button>
-                <button class="tab" id="tab-scan">Scan</button>
-                <button class="tab" id="tab-products">Products</button>
-                <button class="tab" id="tab-receipt">Bon / Setări</button>
+
+            <div id="tab-history" class="panel">
+                <div style="display:flex; justify-content:space-between; align-items:center">
+                    <h3>📜 Istoric Vânzări</h3>
+                    <button class="btn btn-danger" style="padding:8px 15px; font-size:0.8rem" onclick="clearHistory()">Șterge Istoric</button>
+                </div>
+                <div id="history-list">
+                    <div style="text-align:center; padding:40px; color:var(--muted)">Nicio vânzare înregistrată.</div>
+                </div>
             </div>
-            <div id="panel-generate" class="panel">
-                <div class="grid">
+
+            <div id="tab-settings" class="panel">
+                <h3>⚙️ Configurare Sistem</h3>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px">
                     <div>
-                        <label for="pname">Name</label>
-                        <input id="pname" placeholder="Product name">
-
-                        <label for="pdesc">Description</label>
-                        <textarea id="pdesc" rows="3" placeholder="Short description"></textarea>
-
-                        <label for="pstock">Stock / Number</label>
-                        <input id="pstock" placeholder="Quantity or SKU number">
-
-                        <label for="pprice">Price</label>
-                        <input id="pprice" placeholder="Price (e.g. 9.99)">
-
-                        <label for="purl">Product URL (optional)</label>
-                        <input id="purl" placeholder="https://example.com/product-page">
-
-                        <label for="pcode">Barcode value (optional)</label>
-                        <input id="pcode" placeholder="Leave empty to auto-generate numeric code">
-
-                        <label for="pimage">Image (optional)</label>
-                        <input id="pimage" type="file" accept="image/*">
-
-                        <div id="image-preview" style="margin-top:8px;display:none"><strong>Image preview</strong><div style="margin-top:6px"><img id="image-preview-img" src="" class="thumb"></div></div>
-
-                        <div style="margin-top:10px" class="actions">
-                            <button id="btn-generate">Generate Barcode</button>
-                            <button id="btn-scan-fill">Scan & Fill</button>
-                            <button id="btn-save" disabled>Save Product</button>
-                        </div>
-
-                        <div style="margin-top:10px">
-                            <svg id="barcode"></svg>
-                        </div>
-
-                        <div style="margin-top:8px">
-                            <button id="btn-download" disabled>Download Barcode PNG</button>
-                        </div>
+                        <h4>🏢 Date Firmă (Bon)</h4>
+                        <label>Nume Firmă</label><input type="text" id="set-comp-name" onchange="updateCompSetting('name', this.value)">
+                        <div style="height:10px"></div>
+                        <label>CUI / CIF</label><input type="text" id="set-comp-cui" onchange="updateCompSetting('cui', this.value)">
+                        <div style="height:10px"></div>
+                        <label>Adresă</label><textarea id="set-comp-addr" rows="3" onchange="updateCompSetting('addr', this.value)"></textarea>
+                        <div style="height:10px"></div>
+                        <label>URL Logo (Imagine)</label><input type="text" id="set-comp-logo" onchange="updateCompSetting('logo', this.value)">
                     </div>
-
-                    <!-- products moved to dedicated Products tab -->
-                </div>
-            </div>
-
-            <div id="panel-products" class="panel" style="display:none">
-                <div>
-                    <div style="display:flex;justify-content:space-between;align-items:center">
-                        <strong>Products</strong>
-                        <div class="actions">
-                            <button id="btn-export">Export Excel</button>
-                            <button id="btn-import">Import Excel</button>
-                            <input id="import-file" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+                    <div>
+                        <h4>🛠️ Preferințe & Securitate</h4>
+                        <div style="background:rgba(0,0,0,0.2); padding:20px; border-radius:10px; border:1px solid var(--border)">
+                            <label style="display:flex; justify-content:space-between; align-items:center; cursor:pointer">
+                                <span>📱 Mod Ecran Tactil (Butoane Mari)</span>
+                                <input type="checkbox" id="set-touch-toggle" style="width:20px; height:20px" onchange="toggleTouchMode(this.checked)">
+                            </label>
+                            <hr style="border:0; border-top:1px solid var(--border); margin:15px 0">
+                            <label>Cota TVA Implicită (%)</label>
+                            <input type="number" id="set-tva" value="19" onchange="updateCompSetting('tva', this.value)">
+                            <hr style="border:0; border-top:1px solid var(--border); margin:15px 0">
+                            <label>Schimbă PIN Acces (Default:0000)</label>
+                            <input type="password" id="set-pin" placeholder="PIN Nou" onchange="updateCompSetting('pin', this.value)">
                         </div>
-                    </div>
-
-                    <div id="products-list" style="margin-top:8px;max-height:640px;overflow:auto"></div>
-                </div>
-            </div>
-
-            <div id="panel-receipt" class="panel" style="display:none">
-                <div style="display:flex;gap:12px;flex-direction:column">
-                    <div style="display:flex;justify-content:space-between;align-items:center">
-                        <strong>Bon / Setări</strong>
-                        <div class="actions">
-                            <button id="btn-download-receipt">Generare DOCX</button>
-                            <button id="btn-print-receipt">Print Bon</button>
-                        </div>
-                    </div>
-
-                    <div style="display:flex;gap:12px;align-items:flex-start">
-                        <div style="flex:1;max-width:420px">
-                            <h4>Date Firmă</h4>
-                            <label for="company-name">Nume Firmă</label>
-                            <input id="company-name" placeholder="Nume firmă">
-                            <label for="company-cui">CUI</label>
-                            <input id="company-cui" placeholder="CUI">
-                            <label for="company-reg">Nr. Reg. Com.</label>
-                            <input id="company-reg" placeholder="Nr. Reg. Com.">
-                            <label for="company-addr">Adresă</label>
-                            <input id="company-addr" placeholder="Adresă">
-                            <div style="margin-top:8px"><button id="btn-save-company">Salvează</button></div>
-                        </div>
-
-                        <div style="flex:1">
-                            <h4>Previzualizare Bon</h4>
-                            <div id="receipt-container" style="border:1px dashed #000000;padding:12px;border-radius:6px;background:#fff;max-width:320px">
-                                <div id="receipt-preview"></div>
-                            </div>
-                        </div>
+                        <button class="btn btn-danger" style="margin-top:20px; width:100%" onclick="hardReset()">⚠️ RESETARE TOTALĂ FABRICĂ</button>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <div id="panel-scan" class="panel" style="display:none">
-                <div style="display:flex;gap:12px;flex-direction:column">
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <button id="btn-start-scan">Start Camera Scan</button>
-                        <button id="btn-stop-scan" disabled>Stop</button>                    
-                        <button id="btn-resume" style="display:none" title="Resume live scanning">✕</button>
-                        <!-- camera selection removed (app will prefer ultrawide back camera by default) -->
-                        <small class="hint">Tip: allow camera, align barcode with the red line</small>
-                    </div>
-                    <div id="perm-hint" style="margin-top:8px;color:#8b5cf6;font-weight:600"></div>
-
-                    <div class="scanner-wrap" style="height:420px">
-                        <video id="video" playsinline></video>
-                        <div class="scanner-overlay">
-                            <div class="scanner-guide"></div>
-                            <div class="red-line" aria-hidden="true"></div>
-                            <button id="btn-torch" title="Toggle torch" style="position:absolute;right:12px;top:12px;z-index:10;padding:8px;border-radius:8px;border:none;background:rgba(0,0,0,0.6);color:white;backdrop-filter:blur(6px)">⚡</button>
-                            <div class="scan-flash" id="scan-flash"></div>
-                            <canvas id="capture-canvas" style="position:absolute;left:0;top:0;width:100%;height:100%;display:none;border-radius:8px"></canvas>
-                        </div>
-                    </div>
-
-                    <div id="scan-result" style="display:flex;gap:12px;align-items:flex-start">
-                        <div style="flex:1">
-                            <strong>Result</strong>
-                            <div id="result-text" style="padding:8px;border:1px solid #000000;border-radius:6px;background:#fafafa;min-height:70px"></div>
-                        </div>
-                        <div style="width:260px">
-                            <strong>Found product</strong>
-                            <div id="found-product" style="padding:8px;border:1px solid #000000;border-radius:6px;background:#fff;min-height:70px"></div>
-                        </div>
-                    </div>
-                    <div id="cart-panel" style="margin-top:12px;padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:var(--panel)">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>Cart</strong><div style="display:flex;gap:8px"><button id="btn-clear-cart">Clear Cart</button><button id="btn-checkout">Checkout</button></div></div>
-                        <div id="cart-list" style="max-height:320px;overflow:auto;margin-bottom:8px"></div>
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                            <div><strong>Total</strong></div>
-                            <div id="cart-total" style="font-size:18px;font-weight:700">$0.00</div>
-                        </div>
-                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-                            <label style="font-weight:600">Paid:</label>
-                            <input id="payment-amount" type="number" min="0" step="0.01" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ddd" placeholder="Amount paid">
-                        </div>
-                        <div style="font-size:13px;color:var(--muted)">After checkout the receipt will be generated and cart cleared.</div>
-                    </div>
+        <aside class="cart-sidebar">
+            <div style="padding:20px; border-bottom:1px solid var(--border); background:rgba(0,0,0,0.2)">
+                <h3 style="margin:0; color:white">🛒 Coș Curent</h3>
+            </div>
+            <div id="cart-display" class="cart-items">
+                <div style="text-align:center; margin-top:50px; color:var(--muted)">
+                    Coșul este gol.<br>Scanează un produs.
                 </div>
             </div>
+            <div style="padding:25px; background:rgba(30, 41, 59, 0.95); border-top:1px solid var(--border); box-shadow: 0 -5px 20px rgba(0,0,0,0.3)">
+                <div style="display:flex; justify-content:space-between; font-size:1.6rem; font-weight:800; color:var(--success); margin-bottom:15px">
+                    <span>TOTAL</span><span id="grand-total">0.00 LEI</span>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:15px">
+                    <input type="number" id="cash-received" placeholder="Numerar..." style="text-align:center; font-size:1.2rem; font-weight:bold">
+                    <button class="btn btn-warning" onclick="calcRest()">Calculează Rest</button>
+                </div>
+                <button class="btn btn-success" style="width:100%; padding:18px; font-size:1.2rem; font-weight:bold; letter-spacing:1px" onclick="finalizeCheckout()">✅ EMITE BON FISCAL</button>
+            </div>
+        </aside>
+    </main>
 
-            <footer>
-        </main>
+    <nav class="nav-bar">
+        <button class="nav-item active" onclick="switchTab('sale', this)">📸 Vânzare</button>
+        <button class="nav-item" onclick="switchTab('inventory', this)">📦 Produse</button>
+        <button class="nav-item" onclick="switchTab('history', this)">📜 Istoric</button>
+        <button class="nav-item" onclick="accessSettings(this)">⚙️ Setări</button>
+    </nav>
 
-        <script>
-            // Storage key
-            const STORAGE_KEY = 'products-db-v1';
+    <div id="print-receipt"></div>
 
-            // DOM
-            const tabGenerate = document.getElementById('tab-generate');
-            const tabScan = document.getElementById('tab-scan');
-            const tabProducts = document.getElementById('tab-products');
-            const tabReceipt = document.getElementById('tab-receipt');
-            const panelGenerate = document.getElementById('panel-generate');
-            const panelScan = document.getElementById('panel-scan');
-            const panelProducts = document.getElementById('panel-products');
-            const panelReceipt = document.getElementById('panel-receipt');
+    <script>
+        // --- CONFIG & STATE ---
+        let inventory = JSON.parse(localStorage.getItem('pos_inventory')) || {};
+        let company = JSON.parse(localStorage.getItem('pos_company')) || { 
+            name: 'Demo Shop SRL', 
+            cui: 'RO123456', 
+            addr: 'Str. Principală Nr. 1, București', 
+            logo: '', 
+            tva: 19, 
+            touch: false,
+            pin: '0000'
+        };
+        let salesHistory = JSON.parse(localStorage.getItem('pos_history')) || [];
+        let cart = [];
+        let codeReader = null;
+        let selectedDeviceId = localStorage.getItem('pos_camera_id') || null;
 
-            const pname = document.getElementById('pname');
-            const pdesc = document.getElementById('pdesc');
-            const pstock = document.getElementById('pstock');
-            const pcode = document.getElementById('pcode');
-            const pimage = document.getElementById('pimage');
-            const pprice = document.getElementById('pprice');
-            const purl = document.getElementById('purl');
-            const imagePreview = document.getElementById('image-preview');
-            const imagePreviewImg = document.getElementById('image-preview-img');
-            const btnGenerate = document.getElementById('btn-generate');
-            const btnSave = document.getElementById('btn-save');
-            const btnDownload = document.getElementById('btn-download');
-            const barcodeSvg = document.getElementById('barcode');
+        // --- INITIALIZARE ---
+        window.onload = async () => {
+            codeReader = new ZXing.BrowserMultiFormatReader();
+            applySettings();
+            await initCamera();
+            renderInventory();
+            renderHistory();
+            startClock();
+            
+            // Check internet status
+            window.addEventListener('online', updateStatus);
+            window.addEventListener('offline', updateStatus);
+        };
 
-            const productsList = document.getElementById('products-list');
-            const btnExport = document.getElementById('btn-export');
-            const btnImport = document.getElementById('btn-import');
-            const importFile = document.getElementById('import-file');
-            // Receipt / company elements
-            const companyNameEl = document.getElementById('company-name');
-            const companyCuiEl = document.getElementById('company-cui');
-            const companyRegEl = document.getElementById('company-reg');
-            const companyAddrEl = document.getElementById('company-addr');
-            const btnSaveCompany = document.getElementById('btn-save-company');
-            const btnDownloadReceipt = document.getElementById('btn-download-receipt');
-            const btnPrintReceipt = document.getElementById('btn-print-receipt');
-            const receiptPreview = document.getElementById('receipt-preview');
-
-            // Scan elements
-            const video = document.getElementById('video');
-            const btnStartScan = document.getElementById('btn-start-scan');
-            const btnStopScan = document.getElementById('btn-stop-scan');
-            const resultText = document.getElementById('result-text');
-            const foundProduct = document.getElementById('found-product');
-
-            let products = [];
-            let currentBarcodeValue = '';
-            let editingOriginalCode = null;
-            let lastDeleted = null;
-            let undoTimeoutId = null;
-            let codeReader = null;
-            let currentDeviceId = null;
-            let selectedImageBase64 = null;
-            let scanningPaused = false;
-            let lastScanned = {value:null, ts:0};
-            let fillMode = false;
-            const SCAN_COOLDOWN = 1400; // ms
-            const cameraSelect = document.getElementById('camera-select'); // may be null now (select removed)
-            // hidden canvas to crop video center for scanning (improves detection reliability)
-            const scanCanvas = document.createElement('canvas');
-            const scanCtx = scanCanvas.getContext('2d');
-            let ocrLoopTimer = null;
-            let lastOcrDigits = '';
-            let barcodeConfirmCounts = {};
-            const CONFIRM_THRESHOLD = 2; // how many repeated barcode reads to accept without OCR
-
-            // ZXing decode hints helper: prefer common linear barcode formats (can be adjusted)
-            function getZXingHints(){
-                if(typeof ZXing === 'undefined' || !ZXing.DecodeHintType) return undefined;
-                try{
-                    const hints = new Map();
-                    const fmts = [
-                        ZXing.BarcodeFormat.CODE_128,
-                        ZXing.BarcodeFormat.EAN_13,
-                        ZXing.BarcodeFormat.EAN_8,
-                        ZXing.BarcodeFormat.UPC_A,
-                        ZXing.BarcodeFormat.UPC_E,
-                        ZXing.BarcodeFormat.CODE_39,
-                        ZXing.BarcodeFormat.ITF
-                    ];
-                    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmts);
-                    return hints;
-                }catch(e){ return undefined; }
-            }
-
-            // Helper: start a BarcodeDetector-based scan loop on an existing media stream
-            let _detectorLoopHandle = null;
-            async function startDetectorOnStream(stream){
-                try{
-                    if(_detectorLoopHandle){ clearInterval(_detectorLoopHandle); _detectorLoopHandle = null; }
-                    video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
-                    const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
-                    if(!detector){ console.warn('No BarcodeDetector available for manual stream.'); return; }
-                    const loop = async ()=>{
-                        try{
-                            if(video.paused || video.ended) return;
-                            const vw = video.videoWidth || video.clientWidth;
-                            const vh = video.videoHeight || video.clientHeight;
-                            if(!vw||!vh) return;
-                            const cw = Math.floor(vw * 0.6);
-                            const ch = Math.max(24, Math.floor(vh * 0.14));
-                            const sx = Math.floor((vw - cw)/2);
-                            const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
-                            scanCanvas.width = cw; scanCanvas.height = ch;
-                            scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
-                            const barcodes = await detector.detect(scanCanvas);
-                            if(barcodes && barcodes.length){
-                                const v = barcodes[0].rawValue;
-                                const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return;
-                                lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} 
-                                barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0)+1;
-                                if(lastOcrDigits && extractDigits(v)===lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); return; }
-                                if(barcodeConfirmCounts[v]>=CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); return; }
-                            }
-                        }catch(e){ console.warn('detector loop error', e); }
-                    };
-                    // run loop on interval
-                    _detectorLoopHandle = setInterval(loop, 300);
-                    // run immediately
-                    loop();
-                }catch(e){ console.warn('startDetectorOnStream failed', e); }
-            }
-
-            // Dark mode toggle
-            const btnDark = document.getElementById('btn-darkmode');
-            function setLightTheme(isLight){
-                if(isLight) document.documentElement.classList.add('light-mode'); else document.documentElement.classList.remove('light-mode');
-                localStorage.setItem('theme', isLight? 'light':'dark');
-            }
-            // initialize from storage (default to light-mode for PC-friendly UI)
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            const initialIsLight = (savedTheme === 'light');
-            setLightTheme(initialIsLight);
-            btnDark.textContent = initialIsLight ? 'Light' : 'Dark';
-            btnDark.onclick = ()=>{ const isLight = !(document.documentElement.classList.contains('light-mode')); setLightTheme(isLight); btnDark.textContent = isLight ? 'Light' : 'Dark'; };
-
-            // insecure origin check (show a short message; user will deploy to GitHub Pages)
-            const insecureWarning = document.getElementById('insecure-warning');
-            const isSecureContext = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-            if(!isSecureContext){ insecureWarning.style.display = 'block'; }
-
-            // permission hint UI
-            const permHint = document.getElementById('perm-hint');
-            function setPermHint(msg, color){ if(!permHint) return; permHint.textContent = msg; if(color) permHint.style.color = color; }
-
-            // Request camera permission proactively and return true if granted
-            async function requestCameraPermission(){
-                if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-                    setPermHint('Camera not supported by this browser.', '#d97706');
-                    return false;
-                }
-                // If insecure origin, warn and don't try (permission will be blocked)
-                if(!(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')){
-                    setPermHint('Page not served over HTTPS — camera permission will be blocked. Deploy to GitHub Pages or use HTTPS.', '#b91c1c');
-                    return false;
-                }
-                try{
-                    // Try Permissions API first for a quick check
-                    if(navigator.permissions && navigator.permissions.query){
-                        try{
-                            const p = await navigator.permissions.query({name: 'camera'});
-                            if(p.state === 'granted'){ setPermHint('Camera permission already granted.', '#059669'); return true; }
-                            if(p.state === 'denied'){ setPermHint('Camera permission was denied. Enable camera access in browser settings.', '#b91c1c'); return false; }
-                            // if 'prompt', we'll request below
-                        }catch(e){ /* some browsers don't support name:'camera' */ }
-                    }
-
-                    // Request a minimal generic video stream to trigger permission prompt
-                    // (don't force facingMode here so browser will prompt and we can enumerate devices)
-                    setPermHint('Requesting camera permission...', '#0ea5e9');
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    // got permission; immediately stop tracks since caller will reopen properly
-                    stream.getTracks().forEach(t=>t.stop());
-                    setPermHint('Camera permission granted. You can start scanning.', '#059669');
-                    return true;
-                }catch(err){
-                    console.warn('getUserMedia error', err);
-                    if(err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')){
-                        setPermHint('Camera permission blocked. Allow access in the browser prompt or settings.', '#b91c1c');
-                    }else if(err && err.name === 'NotFoundError'){
-                        setPermHint('No camera found on this device.', '#b91c1c');
-                    }else{
-                        setPermHint('Camera error: ' + (err && err.message ? err.message : String(err)), '#b91c1c');
-                    }
-                    return false;
-                }
-            }
-
-            // Tabs (switch panels and manage camera)
-            tabGenerate.onclick = ()=>{tabGenerate.classList.add('active');tabScan.classList.remove('active');tabProducts.classList.remove('active');tabReceipt && tabReceipt.classList.remove('active');panelGenerate.style.display='block';panelScan.style.display='none';panelProducts.style.display='none';panelReceipt && (panelReceipt.style.display='none'); stopCameraScan(); }
-            tabScan.onclick = async ()=>{tabScan.classList.add('active');tabGenerate.classList.remove('active');tabProducts.classList.remove('active');tabReceipt && tabReceipt.classList.remove('active');panelScan.style.display='block';panelGenerate.style.display='none';panelProducts.style.display='none';panelReceipt && (panelReceipt.style.display='none');
-                // proactively request permission so browser shows prompt immediately
-                const ok = await requestCameraPermission();
-                if(ok){ startCameraScan(); }else{ /* permission not granted or blocked; user will see guidance in UI */ }
-            }
-            tabProducts.onclick = ()=>{ tabProducts.classList.add('active'); tabGenerate.classList.remove('active'); tabScan.classList.remove('active'); tabReceipt && tabReceipt.classList.remove('active'); panelProducts.style.display='block'; panelGenerate.style.display='none'; panelScan.style.display='none'; panelReceipt && (panelReceipt.style.display='none'); stopCameraScan(); }
-            if(tabReceipt){
-                tabReceipt.onclick = ()=>{
-                    tabReceipt.classList.add('active');
-                    tabGenerate.classList.remove('active');
-                    tabScan.classList.remove('active');
-                    tabProducts.classList.remove('active');
-                    panelReceipt.style.display = 'block';
-                    panelGenerate.style.display = 'none';
-                    panelScan.style.display = 'none';
-                    panelProducts.style.display = 'none';
-                    stopCameraScan();
-                    // load settings and render preview
-                    loadCompanySettings();
-                    renderReceipt();
-                };
-            }
-
-            // Load/save
-            function loadProducts(){
-                try{
-                    const raw=localStorage.getItem(STORAGE_KEY);
-                    products = raw?JSON.parse(raw):[];
-                }catch(e){products=[]}
-                renderProducts();
-            }
-            function saveProducts(){localStorage.setItem(STORAGE_KEY,JSON.stringify(products));renderProducts();}
-
-            function renderProducts(){
-                productsList.innerHTML='';
-                if(!products.length){productsList.innerHTML='<div class="hint">No products yet.</div>';return}
-                products.slice().reverse().forEach((p,idx)=>{
-                    const el=document.createElement('div');el.className='product';
-                    el.innerHTML = `<div style="display:flex;gap:8px"><div style="width:76px;height:76px;flex:0 0 76px;border:1px solid #eee;border-radius:6px;display:flex;align-items:center;justify-content:center">${p.image?'<img src="'+p.image+'" class="thumb">':'<small class="hint">No image</small>'}</div><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.url?'<div style="margin-top:6px"><a href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener">Open product page</a></div>':''}</div><div style="display:flex;flex-direction:column;gap:6px"><button data-code="${p.code}" class="btn-edit">Edit</button><button data-code="${p.code}" class="btn-copy">Copy</button><button data-code="${p.code}" class="btn-delete">Delete</button></div></div>`;
-                    productsList.appendChild(el);
-                });
-                // attach handlers
-                document.querySelectorAll('.btn-delete').forEach(btn=>btn.onclick=(e)=>{const c=e.target.dataset.code; deleteProductByCode(c); });
-                document.querySelectorAll('.btn-copy').forEach(btn=>btn.onclick=(e)=>{navigator.clipboard?.writeText(e.target.dataset.code);alert('Copied '+e.target.dataset.code)});
-                document.querySelectorAll('.btn-edit').forEach(btn=>btn.onclick=(e)=>{ const code=e.target.dataset.code; startEditProduct(code); });
-            }
-
-            // Delete with undo support
-            const undoToast = document.getElementById('undo-toast');
-            const undoText = document.getElementById('undo-text');
-            const undoBtn = document.getElementById('undo-btn');
-
-            function showUndoToast(item){
-                lastDeleted = { item, ts: Date.now() };
-                undoText.textContent = `Deleted "${item.name || item.code}"`;
-                if(undoToast) undoToast.style.display = 'flex';
-                if(undoTimeoutId) clearTimeout(undoTimeoutId);
-                undoTimeoutId = setTimeout(()=>{ hideUndoToast(); lastDeleted = null; }, 6000);
-            }
-            function hideUndoToast(){ if(undoToast) undoToast.style.display = 'none'; if(undoTimeoutId){ clearTimeout(undoTimeoutId); undoTimeoutId = null; } }
-            if(undoBtn) undoBtn.onclick = ()=>{ if(lastDeleted){ products.push(lastDeleted.item); saveProducts(); lastDeleted = null; hideUndoToast(); } };
-
-            function deleteProductByCode(code){
-                const idx = products.findIndex(p=>p.code==code);
-                if(idx === -1) return;
-                const [removed] = products.splice(idx,1);
-                saveProducts();
-                showUndoToast(removed);
-            }
-
-            // Start editing a product: populate Generate form with product data
-            function startEditProduct(code){
-                const p = products.find(x=>x.code==code);
-                if(!p){ alert('Product not found'); return; }
-                // switch to Generate tab
-                tabGenerate.click();
-                // populate form
-                pname.value = p.name || '';
-                pdesc.value = p.desc || '';
-                pstock.value = p.stock || '';
-                pprice.value = p.price || '';
-                purl.value = p.url || '';
-                pcode.value = p.code || '';
-                selectedImageBase64 = p.image || null;
-                // show image preview if present
-                try{ if(selectedImageBase64 && imagePreviewImg){ imagePreviewImg.src = selectedImageBase64; imagePreview.style.display = 'block'; } else { if(imagePreview) imagePreview.style.display = 'none'; } }catch(e){}
-                // render barcode preview
-                try{ JsBarcode(barcodeSvg, p.code, {format: 'CODE128', displayValue: true, width:2, height:60}); currentBarcodeValue = p.code; btnSave.disabled = false; btnDownload.disabled = false; }catch(e){}
-                // mark editing original code so save can replace correctly
-                editingOriginalCode = p.code;
-            }
-
-            function escapeHtml(s){if(!s) return ''; return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-
-            // Barcode generation
-            btnGenerate.onclick = ()=>{
-                const val = pcode.value.trim() || generateNumericCode();
-                currentBarcodeValue = val;
-                try{
-                    JsBarcode(barcodeSvg, val, {format: 'CODE128', displayValue: true, width:2, height:60});
-                    btnSave.disabled = false;
-                    btnDownload.disabled = false;
-                }catch(err){alert('Barcode generation failed: '+err.message)}
-            }
-
-            const btnScanFill = document.getElementById('btn-scan-fill');
-            if(btnScanFill){ btnScanFill.onclick = async ()=>{ fillMode = true; try{ await requestCameraPermission(); tabScan.click(); }catch(e){ console.warn('scan fill start failed', e); fillMode=false; } }; }
-
-            // image upload
-            pimage.onchange = (e)=>{
-                const f=e.target.files[0];
-                if(!f) return selectedImageBase64=null;
-                const fr=new FileReader();
-                fr.onload=()=>{selectedImageBase64=fr.result; try{ if(imagePreviewImg){ imagePreviewImg.src = selectedImageBase64; imagePreview.style.display = 'block'; } }catch(e){} };
-                fr.readAsDataURL(f);
-            }
-
-            btnSave.onclick = ()=>{
-                if(!currentBarcodeValue){alert('Generate barcode first');return}
-                const obj={code:currentBarcodeValue,name:pname.value||'(no name)',desc:pdesc.value||'',stock:pstock.value||'',price:pprice.value||'',image:selectedImageBase64||null, url: (purl && purl.value) ? purl.value.trim() : ''};
-                // if not editing an existing product and a product with same code exists, confirm overwrite
-                if(!editingOriginalCode){ const exists = products.find(p=>p.code===obj.code); if(exists){ if(!confirm('A product with this code already exists. Overwrite it?')) return; } }
-                // if editing an existing product, remove that original entry first (handles code changes)
-                if(editingOriginalCode){ products = products.filter(p => p.code !== editingOriginalCode); }
-                // also remove any existing product with the new code to avoid duplicates
-                products = products.filter(p=>p.code!==obj.code);
-                products.push(obj);
-                // clear editing state
-                editingOriginalCode = null;
-                saveProducts();
-                // clear form and preview
-                pname.value='';pdesc.value='';pstock.value='';pcode.value='';pimage.value='';purl.value='';selectedImageBase64=null;currentBarcodeValue='';barcodeSvg.innerHTML='';btnSave.disabled=true;btnDownload.disabled=true;
-                if(imagePreview){ imagePreviewImg.src=''; imagePreview.style.display='none'; }
-            }
-
-            // download barcode PNG
-            btnDownload.onclick = ()=>{
-                const svg = barcodeSvg.outerHTML;
-                const canvas = document.createElement('canvas');
-                const svgBlob = new Blob([svg],{type:'image/svg+xml;charset=utf-8'});
-                const url = URL.createObjectURL(svgBlob);
-                const img = new Image();
-                img.onload = ()=>{
-                    canvas.width = img.width || 600; canvas.height = img.height || 200;
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-                    ctx.drawImage(img,0,0);
-                    const png = canvas.toDataURL('image/png');
-                    const a = document.createElement('a'); a.href = png; a.download = (pname.value||'barcode') + '.png'; a.click();
-                    URL.revokeObjectURL(url);
-                };
-                img.src = url;
-            }
-
-            function generateNumericCode(){
-                // create an 12-digit-ish numeric code using timestamp + random
-                const t = Date.now().toString();
-                const rand = Math.floor(Math.random()*900+100).toString();
-                return (t+rand).slice(-12);
-            }
-
-            // ----- Receipt / Company settings -----
-            const COMPANY_KEY = 'company-settings-v1';
-            function loadCompanySettings(){
-                try{
-                    const raw = localStorage.getItem(COMPANY_KEY);
-                    if(!raw) return;
-                    const c = JSON.parse(raw);
-                    companyNameEl.value = c.name || '';
-                    companyCuiEl.value = c.cui || '';
-                    companyRegEl.value = c.reg || '';
-                    companyAddrEl.value = c.addr || '';
-                }catch(e){/* ignore */}
-            }
-            function saveCompanySettings(){
-                try{
-                    const c = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
-                    localStorage.setItem(COMPANY_KEY, JSON.stringify(c));
-                }catch(e){console.warn(e)}
-            }
-
-            function formatCurrency(v){ return '$' + (parseFloat(v)||0).toFixed(2); }
-
-            function renderReceipt(){
-                try{
-                    const now = new Date();
-                    const dateStr = now.toLocaleDateString(); const timeStr = now.toLocaleTimeString();
-                    const c = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
-                    let html = '';
-                    html += `<div style="text-align:center;font-weight:700;font-size:16px;margin-bottom:6px">BON FISCAL</div>`;
-                    html += `<div style="text-align:center;font-size:12px;margin-bottom:8px">${dateStr} ${timeStr}</div>`;
-                    if(c.name) html += `<div style="font-size:12px;text-align:center;margin-bottom:6px">${escapeHtml(c.name)}</div>`;
-                    if(c.cui) html += `<div style="font-size:11px;text-align:center">CUI: ${escapeHtml(c.cui)}</div>`;
-                    if(c.reg) html += `<div style="font-size:11px;text-align:center">Reg: ${escapeHtml(c.reg)}</div>`;
-                    if(c.addr) html += `<div style="font-size:11px;text-align:center;margin-bottom:8px">${escapeHtml(c.addr)}</div>`;
-                    html += '<div style="border-top:1px dashed #ddd;margin:6px 0"></div>';
-                    html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
-                    html += '<thead><tr><th style="text-align:left">Produs</th><th style="text-align:center">Cant.</th><th style="text-align:right">Preț</th><th style="text-align:right">Subtotal</th></tr></thead>';
-                    html += '<tbody>';
-                    let total = 0;
-                    cart.forEach(it=>{
-                        const qty = Number(it.qty)||0; const price = parseFloat(it.price)||0; const sub = qty * price; total += sub;
-                        html += `<tr><td>${escapeHtml(it.name)}</td><td style="text-align:center">${qty}</td><td style="text-align:right">${formatCurrency(price)}</td><td style="text-align:right">${formatCurrency(sub)}</td></tr>`;
-                    });
-                    html += '</tbody>';
-                    html += '</table>';
-                    html += '<div style="border-top:1px dashed #ddd;margin:8px 0"></div>';
-                    html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px"><div>Total</div><div>${formatCurrency(total)}</div></div>`;
-                    receiptPreview.innerHTML = html;
-                }catch(e){ console.warn('renderReceipt failed', e); }
-            }
-
-            if(btnSaveCompany) btnSaveCompany.onclick = ()=>{ saveCompanySettings(); renderReceipt(); alert('Company settings saved'); };
-            if(btnDownloadReceipt) btnDownloadReceipt.onclick = async ()=>{
-                try{
-                    // use docx to build a simple receipt document
-                    if(!window.docx){ alert('docx library not loaded'); return; }
-                    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } = window.docx;
-                    const docChildren = [];
-                    const now = new Date();
-                    docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [ new TextRun({ text: 'BON FISCAL', bold: true }) ] }));
-                    docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [ new TextRun({ text: now.toLocaleString() }) ] }));
-                    const cmp = { name: companyNameEl.value||'', cui: companyCuiEl.value||'', reg: companyRegEl.value||'', addr: companyAddrEl.value||'' };
-                    if(cmp.name) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun(cmp.name) ] }));
-                    if(cmp.cui) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun('CUI: ' + cmp.cui) ] }));
-                    if(cmp.reg) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun('Reg: ' + cmp.reg) ] }));
-                    if(cmp.addr) docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, children:[ new TextRun(cmp.addr) ] }));
-                    docChildren.push(new Paragraph({ children:[ new TextRun('') ] }));
-
-                    // table header
-                    const rows = [];
-                    rows.push(new TableRow({ children: [ new TableCell({ children:[ new Paragraph('Produs') ] }), new TableCell({ children:[ new Paragraph('Cant.') ] }), new TableCell({ children:[ new Paragraph('Preț') ] }), new TableCell({ children:[ new Paragraph('Subtotal') ] }) ] }));
-                    let total = 0;
-                    cart.forEach(it=>{
-                        const qty = Number(it.qty)||0; const price = parseFloat(it.price)||0; const sub = qty*price; total += sub;
-                        rows.push(new TableRow({ children: [ new TableCell({ children:[ new Paragraph(it.name) ] }), new TableCell({ children:[ new Paragraph(String(qty)) ] }), new TableCell({ children:[ new Paragraph(formatCurrency(price)) ] }), new TableCell({ children:[ new Paragraph(formatCurrency(sub)) ] }) ] }));
-                    });
-                    const table = new Table({ rows });
-                    docChildren.push(table);
-                    docChildren.push(new Paragraph({ children:[ new TextRun('') ] }));
-                    docChildren.push(new Paragraph({ alignment: AlignmentType.RIGHT, children:[ new TextRun({ text: 'Total: ' + formatCurrency(total), bold: true }) ] }));
-
-                    const doc = new Document({ sections: [{ children: docChildren }] });
-                    const blob = await Packer.toBlob(doc);
-                    saveAs(blob, 'bon.docx');
-                }catch(e){ console.error('DOCX generation failed', e); alert('Generare DOCX eșuată: ' + (e && e.message ? e.message : e)); }
+        function startClock() {
+            const tick = () => {
+                const now = new Date();
+                document.getElementById('clock').innerText = now.toLocaleTimeString('ro-RO') + ' | ' + now.toLocaleDateString('ro-RO');
             };
-            if(btnPrintReceipt) btnPrintReceipt.onclick = ()=>{
-                try{
-                    const outer = document.getElementById('receipt-container').outerHTML;
-                    const win = window.open('', '_blank', 'width=420,height=720');
-                    const styles = `<style>body{font-family:Arial,Helvetica,sans-serif;padding:8px}table{width:100%;font-size:12px;border-collapse:collapse}th,td{padding:4px} .center{text-align:center}</style>`;
-                    win.document.write('<html><head><title>Bon</title>'+styles+'</head><body>'+outer+'</body></html>');
-                    win.document.close();
-                    win.focus();
-                    setTimeout(()=>{ win.print(); /* win.close(); */ }, 250);
-                }catch(e){ console.error(e); alert('Print failed: '+(e && e.message?e.message:String(e))); }
-            };
+            tick();
+            setInterval(tick, 1000);
+        }
 
-                        // Excel export with embedded barcode images using ExcelJS
-                        btnExport.onclick = async ()=>{
-                                if(!products.length){alert('No products to export');return}
-                                if(typeof ExcelJS === 'undefined'){alert('ExcelJS not loaded');return}
+        function updateStatus() {
+            const status = document.getElementById('connection-status');
+            if(navigator.onLine) {
+                status.innerText = "● Online"; status.style.color = "var(--success)";
+            } else {
+                status.innerText = "● Offline (Local Mode)"; status.style.color = "var(--warning)";
+            }
+        }
 
-                                const wb = new ExcelJS.Workbook();
-                                const ws = wb.addWorksheet('Products');
-                                ws.columns = [
-                                    {header:'Image', key:'img', width:18},
-                                    {header:'Code', key:'code', width:22},
-                                    {header:'Name', key:'name', width:30},
-                                    {header:'Description', key:'desc', width:40},
-                                    {header:'Stock', key:'stock', width:12},
-                                    {header:'Price', key:'price', width:12}
-                                ];
+        // --- CAMERA & SCANNING ---
+        async function initCamera() {
+            const videoSelect = document.getElementById('camera-select');
 
-                                // helper: render a barcode SVG to PNG base64 (without prefix)
-                                const renderBarcodePngBase64 = (code)=>{
-                                    return new Promise((resolve)=>{
-                                        try{
-                                            const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-                                            JsBarcode(svg, code, {format:'CODE128', displayValue:false, width:2, height:60});
-                                            const svgData = new XMLSerializer().serializeToString(svg);
-                                            const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
-                                            const url = URL.createObjectURL(svgBlob);
-                                            const img = new Image();
-                                            img.onload = ()=>{
-                                                const canvas = document.createElement('canvas');
-                                                canvas.width = img.naturalWidth || 400;
-                                                canvas.height = img.naturalHeight || 120;
-                                                const ctx = canvas.getContext('2d');
-                                                ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-                                                ctx.drawImage(img,0,0);
-                                                const dataUrl = canvas.toDataURL('image/png');
-                                                URL.revokeObjectURL(url);
-                                                resolve(dataUrl.split(',')[1]);
-                                            };
-                                            img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
-                                            img.src = url;
-                                        }catch(err){console.warn('renderBarcode failed',err); resolve(null)}
-                                    })
-                                };
-
-                                // add rows and images
-                                for(let i=0;i<products.length;i++){
-                                    const p = products[i];
-                                    const base64 = await renderBarcodePngBase64(p.code);
-                                    const row = ws.addRow({img:'', code:p.code, name:p.name, desc:p.desc, stock:p.stock, price:p.price||''});
-                                    // row index for ExcelJS is 1-based
-                                    if(base64){
-                                        try{
-                                            const imageId = wb.addImage({base64: base64, extension: 'png'});
-                                            // place the image in the first column for this row
-                                            ws.addImage(imageId, {tl:{col:0,row:row.number-1}, ext:{width:120, height:60}});
-                                            // set row height
-                                            ws.getRow(row.number).height = 45;
-                                        }catch(err){console.warn('addImage failed',err)}
-                                    }
-                                }
-
-                                // write workbook to buffer and save
-                                try{
-                                    const buf = await wb.xlsx.writeBuffer();
-                                    saveAs(new Blob([buf]), 'products.xlsx');
-                                }catch(err){console.error(err); alert('Export failed: '+err.message)}
-                        }
-
-            btnImport.onclick = ()=> importFile.click();
-            importFile.onchange = async (e)=>{
-                const f = e.target.files[0]; if(!f) return;
-                const ext = f.name.split('.').pop().toLowerCase();
-                const data = await f.arrayBuffer();
-                let workbook;
-                try{ workbook = XLSX.read(data, {type:'array'}); }catch(err){alert('Import failed: '+err.message);return}
-                const first = workbook.SheetNames[0];
-                const arr = XLSX.utils.sheet_to_json(workbook.Sheets[first]);
-                if(!arr.length){alert('No rows found');return}
-                // Map rows to products, expecting Code/Name/Description/Stock/Price columns (case-insensitive)
-                arr.forEach(r=>{
-                    const code = r.Code||r.code||r['Barcode']||'';
-                    const name = r.Name||r.name||'';
-                    const desc = r.Description||r.description||r.Desc||'';
-                    const stock = r.Stock||r.stock||'';
-                    const price = r.Price||r.price||'';
-                    if(!code) return;
-                    // keep existing image if any
-                    const existing = products.find(p=>p.code==code);
-                    products = products.filter(p=>p.code!=code);
-                    products.push({code, name, desc, stock, price, image: existing?existing.image:null});
-                });
-                saveProducts();
-                alert('Import complete');
+            // If running from file:// protocol many browsers block getUserMedia.
+            if(location.protocol === 'file:') {
+                console.warn('Running from file:// — camera access may be blocked by the browser.');
             }
 
-            // Scanning - start/stop helpers with rear-camera preference and debounce
-            async function startCameraScan(opts){
-                opts = opts || {};
-                btnStartScan.disabled = true; btnStopScan.disabled = false; resultText.textContent=''; foundProduct.innerHTML='';
-                scanningPaused = false; lastScanned = {value:null, ts:0};
-                barcodeConfirmCounts = {};
-                try{
-                    // reset any previous reader to avoid freezing when switching cameras
-                    try{ if(codeReader) { codeReader.reset(); } }catch(e){ console.warn('reset reader', e); }
-                    // create reader with format hints to bias decoding towards common linear symbologies
-                    const hints = getZXingHints();
-                    codeReader = new ZXing.BrowserMultiFormatReader(hints);
-                    video.setAttribute('playsinline', '');
-                    const devices = await codeReader.listVideoInputDevices();
-                    let preferred = undefined;
-                                        if(devices && devices.length){
-                                                                                    // prefer a back-facing main camera (likely has torch) and avoid ultrawide which often lacks torch
-                                                                                    const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
-                                                                                    const backRegex = /(back|rear|environment|main)/i;
-                                                                                    // try to find a back camera that is NOT ultrawide (likely main camera)
-                                                                                    let p = devices.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
-                                                                                    if(!p) p = devices.find(d=> backRegex.test(d.label));
-                                                                                    if(!p) p = devices[devices.length-1] || devices[0];
-                                                                                    preferred = p;
-                                            // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
-                                            if(cameraSelect){
-                                                cameraSelect.innerHTML = '';
-                                                devices.forEach((d, i)=>{ const opt = document.createElement('option'); opt.value = d.deviceId; opt.text = d.label || ('Camera '+ (i+1)); cameraSelect.appendChild(opt); });
-                                                try{ cameraSelect.value = preferred.deviceId; cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none'; }catch(e){}
-                                            }
-                                        }
-                    const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : ((cameraSelect && cameraSelect.value) ? cameraSelect.value : (preferred ? preferred.deviceId : undefined));
-                    currentDeviceId = deviceId;
-                    // start ZXing decode on the chosen device
-                    codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
-                        if(result){
-                            const text = result.getText();
-                            const now = Date.now();
-                            if(scanningPaused) return;
-                            if(lastScanned.value === text && (now - lastScanned.ts) < SCAN_COOLDOWN) return;
-                            lastScanned = {value:text, ts:now};
-                            scanningPaused = true; setTimeout(()=>{scanningPaused=false}, SCAN_COOLDOWN);
-                            resultText.textContent = text;
-                            const flash = document.getElementById('scan-flash'); if(flash){ flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'), 180); }
-                            // draw a small crop around the red-line area for OCR cross-validation
-                            try{
-                                const vw = video.videoWidth || video.clientWidth || 640;
-                                const vh = video.videoHeight || video.clientHeight || 480;
-                                const cw = Math.floor(vw * 0.6);
-                                const ch = Math.max(32, Math.floor(vh * 0.16));
-                                const sx = Math.max(0, Math.floor((vw - cw)/2));
-                                const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
-                                scanCanvas.width = cw; scanCanvas.height = ch;
-                                scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
-                            }catch(e){ /* ignore */ }
-                            // update confirm counts
-                            barcodeConfirmCounts[text] = (barcodeConfirmCounts[text]||0) + 1;
-                            // if OCR matches lastOcrDigits or confirm count reached, accept immediately
-                            if(lastOcrDigits && extractDigits(text) === lastOcrDigits){
-                                handleDetectedBarcode(text, scanCanvas);
-                            }else if(barcodeConfirmCounts[text] >= CONFIRM_THRESHOLD){
-                                handleDetectedBarcode(text, scanCanvas);
-                            }else{
-                                // not yet confirmed; keep scanning
-                                resultText.textContent = text + ' (waiting OCR)';
-                            }
-                        }
-                        if(err && !(err instanceof ZXing.NotFoundException)){
-                            console.warn(err);
-                        }
-                    });
+            // Try to request permission first so device labels are available
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true });
+            } catch (permErr) {
+                console.warn('Camera permission not granted or unavailable:', permErr);
+                videoSelect.innerHTML = '';
+                const opt = document.createElement('option');
+                opt.disabled = true;
+                opt.selected = true;
+                opt.text = 'Permite accesul la cameră...';
+                videoSelect.appendChild(opt);
 
-                    // After ZXing starts, check whether the active track is front-facing.
-                    // On some iOS browsers the default stream may still be the front camera; if so,
-                    // stop ZXing and open an explicit back-camera stream and run the detector loop.
-                    setTimeout(async ()=>{
-                        try{
-                            const s = video.srcObject;
-                            if(!s) return;
-                            const track = s.getVideoTracks && s.getVideoTracks()[0];
-                            const settings = track && track.getSettings ? track.getSettings() : {};
-                            const facing = settings.facingMode || '';
-                            const label = track && track.label ? track.label : '';
-                            if(facing === 'user' || /front|user/i.test(label)){
-                                try{ codeReader.reset(); }catch(e){}
-                                // pick a preferred back camera deviceId if available
-                                const all = await navigator.mediaDevices.enumerateDevices();
-                                const vids = all.filter(d=>d.kind==='videoinput');
-                                let preferred = null;
-                                for(const d of vids){
-                                    const L = (d.label||'').toLowerCase();
-                                    if(/back|rear|environment|trase|posterior|espate/i.test(L)) { preferred = d; break; }
-                                }
-                                if(!preferred && vids.length>1){ preferred = vids[vids.length-1]; }
-                                if(preferred){
-                                    try{
-                                        const constraints = {video:{ deviceId: { exact: preferred.deviceId }, facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced:[{zoom:1.0}] }};
-                                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                                        await startDetectorOnStream(stream);
-                                    }catch(e){ console.warn('failed to open explicit back stream', e); }
-                                }
-                            }
-                        }catch(e){ console.warn('facing check failed', e); }
-                    }, 600);
-                    // After stream attachment, verify torch capability but avoid opening additional streams
-                    // which can interfere with live decoding (especially on iOS). We only check the
-                    // active track capabilities and inform the user if torch isn't available.
-                    setTimeout(()=>{
-                        try{
-                            const s = video.srcObject;
-                            if(!s) return;
-                            const track = s.getVideoTracks && s.getVideoTracks()[0];
-                            if(!track) return;
-                            const caps = track.getCapabilities ? track.getCapabilities() : {};
-                            if(caps && caps.torch){
-                                // torch supported — no action needed
-                                return;
-                            }
-                            // If running on iOS Safari, torch is generally unsupported in the browser.
-                            const ua = navigator.userAgent || '';
-                            if(/iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS|Chrome/i.test(ua)){
-                                setPermHint('Flash/torch is not supported by iOS Safari.', '#b91c1c');
-                                return;
-                            }
-                            // Inform user that the current camera doesn't expose torch capability.
-                            setPermHint('Current camera does not expose flash/torch capability in this browser.', '#b91c1c');
-                        }catch(e){ console.warn('torch-capability check failed', e); }
-                    }, 900);
-                    // Do not force 1x zoom — allow ultra-wide stream characteristics so scanning uses that camera.
-                    // If needed, device-specific zoom adjustments could be applied here, but we avoid forcing zoom.
-                    // start OCR loop in parallel for cross-validation
-                    try{ startOCRLoop(); }catch(e){ console.warn('startOCRLoop failed', e); }
-                }catch(e){
-                    console.warn('ZXing start failed, falling back to BarcodeDetector if available:', e);
-                    try{
-                        // request a stream with the selected device if available, otherwise prefer rear (exact) camera and request 1x zoom
-                        const constraints = cameraSelect && cameraSelect.value ? { video: { deviceId: { exact: cameraSelect.value }, advanced: [{ zoom: 1.0 }] } } : { video: { facingMode: { exact: 'environment' }, advanced: [{ zoom: 1.0 }] } };
-                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                        // attach stream and ensure playsinline for mobile
-                        video.srcObject = stream; video.setAttribute('playsinline',''); await video.play();
-                        // start OCR loop in parallel
-                        try{ startOCRLoop(); }catch(e){ console.warn('startOCRLoop failed', e); }
-                        const detector = ('BarcodeDetector' in window) ? new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']}) : null;
-                        if(!detector){console.warn('No BarcodeDetector available.');}
-                        const scanLoop = async ()=>{
-                            if(video.paused || video.ended) return;
-                            try{
-                                if(detector){
-                                    // crop center region to improve detection for small/close barcodes
-                                    const vw = video.videoWidth || video.clientWidth;
-                                    const vh = video.videoHeight || video.clientHeight;
-                                    if(vw && vh){
-                                                        // use a smaller crop and lower resolution for faster detection
-                                                        const cw = Math.floor(vw * 0.6);
-                                                        const ch = Math.floor(vh * 0.28);
-                                        const sx = Math.floor((vw - cw)/2);
-                                        const sy = Math.floor((vh - ch)/2);
-                                        scanCanvas.width = cw; scanCanvas.height = ch;
-                                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
-                                        const barcodes = await detector.detect(scanCanvas);
-                                        if(barcodes && barcodes.length){
-                                            const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} 
-                                            barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0) + 1;
-                                            if(lastOcrDigits && extractDigits(v) === lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); return; }
-                                            if(barcodeConfirmCounts[v] >= CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); return; }
-                                            return;
-                                        }
-                                    }else{
-                                        // fallback to direct detect on video element
-                                        const barcodes = await detector.detect(video);
-                                                        if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; const now = Date.now(); if(lastScanned.value===v && (now-lastScanned.ts)<SCAN_COOLDOWN) return; lastScanned={value:v,ts:now}; resultText.textContent=v; const flash=document.getElementById('scan-flash'); if(flash){flash.classList.add('scan-active'); setTimeout(()=>flash.classList.remove('scan-active'),180);} try{ scanCanvas.width = 1; scanCanvas.height = 1; /* ensure canvas exists */ }catch(e){} barcodeConfirmCounts[v] = (barcodeConfirmCounts[v]||0)+1; if(lastOcrDigits && extractDigits(v)===lastOcrDigits){ handleDetectedBarcode(v, scanCanvas); } else if(barcodeConfirmCounts[v]>=CONFIRM_THRESHOLD){ handleDetectedBarcode(v, scanCanvas); } return; }
-                                    }
-                                }
-                            }catch(err){console.warn(err)}
-                                // throttle detection loop for performance (scan every ~120ms)
-                                setTimeout(()=>{ requestAnimationFrame(scanLoop); }, 120);
-                        };
-                        scanLoop();
-                    }catch(err){alert('Could not start camera: '+err.message);btnStartScan.disabled=false;btnStopScan.disabled=true}
+                // Create a request permission button if not present
+                if(!document.getElementById('request-perm-btn')) {
+                    const controls = document.querySelector('.camera-controls');
+                    const requestBtn = document.createElement('button');
+                    requestBtn.id = 'request-perm-btn';
+                    requestBtn.className = 'btn btn-primary';
+                    requestBtn.style.marginLeft = 'auto';
+                    requestBtn.innerText = 'Permite Cameră';
+                    requestBtn.onclick = requestCameraPermission;
+                    controls.appendChild(requestBtn);
+                } else {
+                    document.getElementById('request-perm-btn').style.display = 'inline-flex';
                 }
+
+                return; // stop until permission granted
             }
 
-            function stopCameraScan(){
-                btnStartScan.disabled = false; btnStopScan.disabled = true; resultText.textContent='';
-                if(codeReader){ try{ codeReader.reset(); }catch(e){console.warn(e)} }
-                try{ if(torchOn){ setTorch(false); } }catch(e){}
-                if(video && video.srcObject){ const tracks = video.srcObject.getTracks(); tracks.forEach(t=>t.stop()); video.srcObject=null; }
-                scanningPaused = false; lastScanned = {value:null, ts:0};
-                // reset OCR loop and confirm counters
-                stopOCRLoop();
-                barcodeConfirmCounts = {};
-            }
+            try {
+                const devices = await codeReader.listVideoInputDevices();
 
-            // bind buttons
-            btnStartScan.onclick = async ()=>{
-                const ok = await requestCameraPermission();
-                if(ok) startCameraScan();
-            };
-            // torch toggle (best-effort)
-            const btnTorch = document.getElementById('btn-torch');
-            let torchOn = false;
-            async function setTorch(on){
-                try{
-                    const stream = video.srcObject;
-                    if(!stream){ alert('Camera not started'); return; }
-                    const track = stream.getVideoTracks()[0];
-                    if(!track) return;
-                    const caps = track.getCapabilities ? track.getCapabilities() : {};
-                    if(caps.torch || (caps.torch === undefined && 'torch' in caps)){
-                        await track.applyConstraints({ advanced: [{ torch: on }] });
-                        torchOn = on; btnTorch.textContent = on? '🔦':'⚡';
-                        return;
-                    }
-                    // try ImageCapture as fallback
-                    if(window.ImageCapture){
-                        const ic = new ImageCapture(track);
-                        if(ic && typeof ic.setOptions === 'function'){
-                            await ic.setOptions({ torch: on }); torchOn = on; btnTorch.textContent = on? '🔦':'⚡'; return;
-                        }
-                    }
-                    alert('Torch not supported on this device/browser');
-                }catch(e){ console.warn('setTorch failed', e); alert('Torch error: ' + (e && e.message?e.message:String(e))); }
-            }
-            async function findTorchFriendlyDevice(){
-                try{
-                    const devs = await navigator.mediaDevices.enumerateDevices();
-                    const vids = devs.filter(d=>d.kind==='videoinput');
-                    if(!vids.length) return null;
-                    const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
-                    const backRegex = /(back|rear|environment|main)/i;
-                    // prefer back camera without ultra keywords
-                    let p = vids.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
-                    if(!p) p = vids.find(d=> backRegex.test(d.label));
-                    if(!p) p = vids[vids.length-1] || vids[0];
-                    return p || null;
-                }catch(e){ console.warn('findTorchFriendlyDevice failed', e); return null; }
-            }
-
-            if(btnTorch) btnTorch.onclick = async ()=>{
-                // attempt to toggle torch on current track
-                try{
-                    const stream = video.srcObject;
-                    const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-                    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
-                    if(caps && caps.torch){ await setTorch(!torchOn); return; }
-                }catch(e){ /* ignore */ }
-                // otherwise try switching to a torch-friendly back camera
-                const candidate = await findTorchFriendlyDevice();
-                if(!candidate || !candidate.deviceId){ alert('No suitable camera found to enable flash/torch. Try using an Android device or a browser that supports torch.'); return; }
-                try{
-                    stopCameraScan();
-                    await startCameraScan({ forceDeviceId: candidate.deviceId });
-                    setTimeout(async ()=>{ try{ await setTorch(true); }catch(e){ console.warn('setTorch after switch failed', e); } }, 800);
-                }catch(e){ console.warn('switch to candidate failed', e); alert('Could not switch camera for torch: ' + (e && e.message? e.message : String(e))); }
-            };
-            btnStopScan.onclick = stopCameraScan;
-            const btnTestCamera = document.getElementById('btn-test-camera');
-            // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
-            btnTestCamera.onclick = async ()=>{
-                try{
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    console.log('devices', devices);
-                    const cams = devices.filter(d=>d.kind==='videoinput');
-                    if(!cams.length){ alert('No camera devices found'); return; }
-                    const deviceId = cameraSelect && cameraSelect.value ? cameraSelect.value : cams[0].deviceId;
-                    const stream = await navigator.mediaDevices.getUserMedia({video: { deviceId: { exact: deviceId } }});
-                    // attach temporarily to video element
-                    video.srcObject = stream; await video.play();
-                    alert('Camera stream started for test. Check video preview.');
-                }catch(err){
-                    console.error('Test camera failed', err);
-                    alert('Camera test error: '+ (err && err.message ? err.message : String(err)));
-                }
-            };
-            const btnCapture = document.getElementById('btn-capture');
-            const btnResume = document.getElementById('btn-resume');
-            const btnFocus = document.getElementById('btn-focus');
-            const captureCanvas = document.getElementById('capture-canvas');
-            const captureCtx = captureCanvas.getContext('2d');
-            let frozen = false;
-
-            // Capture button: if camera not running, start scanner; otherwise freeze frame and try immediate decode
-            btnCapture.onclick = async ()=>{
-                // if camera not started, request permission and start scanning
-                if(!video.srcObject){
-                    const ok = await requestCameraPermission();
-                    if(!ok){ return; }
-                    await startCameraScan();
+                if(devices.length === 0) {
+                    alert("Nu am detectat nicio cameră!");
                     return;
                 }
-                // draw current frame into capture canvas sized to video pixel size
-                const vw = video.videoWidth || video.clientWidth;
-                const vh = video.videoHeight || video.clientHeight;
-                if(!vw || !vh){ alert('Video not ready yet'); return; }
-                captureCanvas.width = vw; captureCanvas.height = vh;
-                captureCtx.drawImage(video, 0, 0, vw, vh);
-                // show canvas overlay (freeze effect)
-                captureCanvas.style.display = 'block';
-                video.style.display = 'none';
-                frozen = true;
-                // stop live decoding
-                try{ if(codeReader) codeReader.reset(); }catch(e){console.warn(e)}
-                // try decode from the frozen canvas using BarcodeDetector if available, otherwise fallback to ZXing image decode
-                try{
-                    let found = false;
-                    if('BarcodeDetector' in window){
-                        try{
-                            const detector = new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_e','upc_a']});
-                            const barcodes = await detector.detect(captureCanvas);
-                            if(barcodes && barcodes.length){ const v = barcodes[0].rawValue; resultText.textContent = v; handleDetectedBarcode(v, captureCanvas); found = true; }
-                        }catch(e){ console.warn('BarcodeDetector on canvas failed', e); }
-                    }
-                    if(!found){
-                        // fallback to ZXing decode from the canvas image
-                        const tryZX = await decodeCanvasWithZXing(captureCanvas);
-                        if(tryZX){ resultText.textContent = tryZX; handleDetectedBarcode(tryZX, captureCanvas); found = true; }
-                    }
-                    if(!found){ resultText.textContent = '(No code detected in frozen image)'; }
-                }catch(err){ console.warn('Frozen decode error', err); resultText.textContent = '(Error decoding frozen image)'; }
-                // show resume button
-                btnResume.style.display = 'inline-block';
-            };
 
-            // ZXing fallback: decode from a canvas by creating an image and using ZXing's image decoder
-            async function decodeCanvasWithZXing(canvas){
-                if(typeof ZXing === 'undefined') return null;
-                try{
-                    // scale the canvas down to reduce ZXing decoding time (max dimension limited)
-                    const maxDim = 800;
-                    let tw = canvas.width, th = canvas.height;
-                    if(tw > maxDim){ const scale = maxDim / tw; tw = Math.floor(tw * scale); th = Math.floor(th * scale); }
-                    if(th > maxDim){ const scale = maxDim / th; tw = Math.floor(tw * scale); th = Math.floor(th * scale); }
-                    const tmp = document.createElement('canvas'); tmp.width = Math.max(1, tw); tmp.height = Math.max(1, th); const tctx = tmp.getContext('2d');
-                    tctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, tmp.width, tmp.height);
-                    const dataUrl = tmp.toDataURL('image/png');
-                    const img = new Image(); img.src = dataUrl; await new Promise((res, rej)=>{ img.onload = res; img.onerror = rej; });
-                    // create a fresh reader for image decode to avoid interfering with live reader
-                    const reader = new ZXing.BrowserMultiFormatReader(getZXingHints());
-                    if(typeof reader.decodeFromImageElement === 'function'){
-                        const resObj = await reader.decodeFromImageElement(img);
-                        if(resObj && resObj.getText) return resObj.getText();
-                    }else if(typeof reader.decodeFromImage === 'function'){
-                        const resObj = await reader.decodeFromImage(img);
-                        if(resObj && resObj.getText) return resObj.getText();
-                    }
-                }catch(e){ console.warn('ZXing canvas decode failed', e); }
-                return null;
-            }
-
-            // Resume scanning: hide capture canvas and restart live scanning
-            btnResume.onclick = async ()=>{
-                if(frozen){
-                    captureCanvas.style.display = 'none';
-                    video.style.display = 'block';
-                    frozen = false;
-                    btnResume.style.display = 'none';
-                    // restart scanning
-                    startCameraScan();
-                }
-            };
-
-            // Focus button: best-effort applyConstraints to request autofocus without restarting camera
-            btnFocus.onclick = async ()=>{
-                if(!video.srcObject){ alert('Camera not started'); return; }
-                try{
-                    const track = video.srcObject.getVideoTracks()[0];
-                    if(!track){ alert('No video track'); return; }
-                    const caps = track.getCapabilities ? track.getCapabilities() : {};
-                    if(caps.focusMode){
-                        try{
-                            await track.applyConstraints({advanced:[{focusMode: 'continuous'}]});
-                            setPermHint('Requested continuous focus (if supported).', '#059669');
-                        }catch(e){ console.warn('focus applyConstraints failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
-                        return;
-                    }
-                    if(caps.focusDistance){
-                        try{
-                            const min = (caps.focusDistance && typeof caps.focusDistance.min === 'number') ? caps.focusDistance.min : 0;
-                            const max = (caps.focusDistance && typeof caps.focusDistance.max === 'number') ? caps.focusDistance.max : min;
-                            const mid = (min+max)/2;
-                            await track.applyConstraints({advanced:[{focusDistance: mid}]});
-                            setPermHint('Requested focus distance (if supported).', '#059669');
-                        }catch(e){ console.warn('focus distance apply failed', e); setPermHint('Focus request failed: ' + (e && e.message ? e.message : String(e)), '#b91c1c'); }
-                        return;
-                    }
-                    // If neither capability present, inform user but do NOT restart the camera (restart caused freezes on some devices)
-                    setPermHint('Auto-focus not directly supported via browser APIs on this device. Try moving camera closer/further.', '#b91c1c');
-                }catch(err){ console.warn(err); setPermHint('Focus request failed: '+(err && err.message?err.message:String(err)), '#b91c1c'); }
-            };
-
-            // cameraSelect onchange removed — the app chooses ultrawide back camera by default
-
-            // (Removed manual Force buttons — default selection now prefers ultrawide back camera)
-
-            // Keep capture and scan canvases in sync with video size on resize/orientation changes
-            function syncCanvasSizes(){
-                try{
-                    const vw = video.videoWidth || video.clientWidth || 640;
-                    const vh = video.videoHeight || video.clientHeight || 480;
-                    // adjust visible capture canvas (overlay) size styles
-                    const overlay = document.getElementById('capture-canvas');
-                    if(overlay){ overlay.width = vw; overlay.height = vh; }
-                    // keep our internal scanCanvas roughly matching video size
-                    if(scanCanvas){ scanCanvas.width = Math.floor(vw * 0.8); scanCanvas.height = Math.floor(vh * 0.36); }
-                }catch(e){ /* ignore */ }
-            }
-            window.addEventListener('resize', ()=>{ syncCanvasSizes(); });
-            window.addEventListener('orientationchange', ()=>{ setTimeout(syncCanvasSizes, 220); });
-            // also sync when video metadata loads
-            video.addEventListener('loadedmetadata', ()=>{ syncCanvasSizes(); });
-
-            // ----- OCR + Cross-validation (Barcode vs OCR digits) -----
-            let ocrWorker = null;
-            async function initOCR(){
-                if(typeof Tesseract === 'undefined') return;
-                if(ocrWorker) return;
-                try{
-                    ocrWorker = Tesseract.createWorker({ logger: m=>{} });
-                    await ocrWorker.load();
-                    await ocrWorker.loadLanguage('eng');
-                    await ocrWorker.initialize('eng');
-                    await ocrWorker.setParameters({ tessedit_char_whitelist: '0123456789' });
-                }catch(e){ console.warn('Tesseract init failed', e); ocrWorker = null; }
-            }
-
-            async function startOCRLoop(){
-                try{ await initOCR(); }catch(e){}
-                if(ocrLoopTimer) return;
-                const runOnce = async ()=>{
-                    try{
-                        if(!video || video.paused || video.ended) return;
-                        const vw = video.videoWidth || video.clientWidth || 640;
-                        const vh = video.videoHeight || video.clientHeight || 480;
-                        const cw = Math.floor(vw * 0.6);
-                        const ch = Math.max(24, Math.floor(vh * 0.14));
-                        const sx = Math.max(0, Math.floor((vw - cw)/2));
-                        const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
-                        scanCanvas.width = cw; scanCanvas.height = ch;
-                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
-                        if(ocrWorker){
-                            const res = await ocrWorker.recognize(scanCanvas);
-                            const txt = (res && res.data && res.data.text) ? res.data.text : '';
-                            const digits = extractDigits(txt);
-                            if(digits && digits.length >= 6){ lastOcrDigits = digits; }
-                        }
-                    }catch(e){ /* ignore ocr errors */ }
-                };
-                ocrLoopTimer = setInterval(runOnce, 700);
-                // run immediately once
-                runOnce();
-            }
-
-            function stopOCRLoop(){ if(ocrLoopTimer){ clearInterval(ocrLoopTimer); ocrLoopTimer = null; lastOcrDigits=''; } }
-            function extractDigits(s){ return (s||'').replace(/\D/g,''); }
-            async function crossValidateBarcode(barcodeText, canvas){
-                try{
-                    await initOCR();
-                    if(!ocrWorker) return { match:false, barcodeDigits: extractDigits(barcodeText), ocrDigits: '' };
-                    const res = await ocrWorker.recognize(canvas);
-                    const ocrText = (res && res.data && res.data.text) ? res.data.text : (res && res.text ? res.text : '');
-                    const ocrDigits = extractDigits(ocrText);
-                    const barcodeDigits = extractDigits(barcodeText);
-                    return { match: barcodeDigits && ocrDigits && barcodeDigits === ocrDigits, barcodeDigits, ocrDigits };
-                }catch(e){ console.warn('crossValidate error', e); return { match:false, barcodeDigits: extractDigits(barcodeText), ocrDigits: '' }; }
-            }
-
-            async function handleDetectedBarcode(text, sourceCanvas){
-                try{
-                    // ensure we have a small crop canvas to OCR; if none provided, attempt to crop around red line
-                    if(!sourceCanvas || (sourceCanvas.width===0 && sourceCanvas.height===0)){
-                        const vw = video.videoWidth || video.clientWidth || 640;
-                        const vh = video.videoHeight || video.clientHeight || 480;
-                        const cw = Math.floor(vw * 0.6);
-                        const ch = Math.max(32, Math.floor(vh * 0.16));
-                        const sx = Math.max(0, Math.floor((vw - cw)/2));
-                        // focus crop slightly below center where human-readable digits often sit
-                        const sy = Math.max(0, Math.floor(vh*0.55 - ch/2));
-                        scanCanvas.width = cw; scanCanvas.height = ch;
-                        scanCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cw, ch);
-                        sourceCanvas = scanCanvas;
-                    }
-                    const res = await crossValidateBarcode(text, sourceCanvas);
-                    if(res.match){
-                        // If we're in fillMode (user clicked Scan & Fill), populate the Generate form
-                        if(fillMode){
-                            try{
-                                pcode.value = text;
-                                currentBarcodeValue = text;
-                                try{ JsBarcode(barcodeSvg, text, {format: 'CODE128', displayValue: true, width:2, height:60}); btnSave.disabled = false; btnDownload.disabled = false; }catch(e){}
-                            }catch(e){ console.warn('fillMode populate failed', e); }
-                            fillMode = false;
-                            // stop camera and return to Generate tab
-                            try{ stopCameraScan(); }catch(e){}
-                            try{ tabGenerate.click(); }catch(e){}
-                            return;
-                        }
-                        // validated — forward to product handler
-                        barcodeConfirmCounts[text] = 0;
-                        onBarcodeValidated(text);
-                    }else{
-                        // not matched: show quick hint and keep scanning until someone matches
-                        resultText.textContent = text + ' (OCR mismatch)';
-                        console.log('Cross-validation mismatch', res);
-                    }
-                }catch(e){ console.warn('handleDetectedBarcode error', e); }
-            }
-
-            function onBarcodeValidated(value){
-                const p = products.find(x=>x.code==value);
-                if(p){
-                    // show product details and add-to-cart controls
-                    foundProduct.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:#555">${escapeHtml(p.desc)}</div><div style="margin-top:6px"><strong>Code:</strong> ${p.code} • <strong>Stock:</strong> ${escapeHtml(p.stock)} • <strong>Price:</strong> ${escapeHtml(p.price||'')}</div>${p.url?'<div style="margin-top:6px"><a href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener">Open product page</a></div>':''}${p.image?'<div style="margin-top:8px"><img src="'+p.image+'" class="thumb"></div>':''}
-                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-                            <label style="font-size:13px">Qty</label>
-                            <input id="cart-qty" type="number" value="1" min="1" style="width:72px;padding:6px;border-radius:6px;border:1px solid #ddd">
-                            <button id="btn-add-cart" style="padding:8px 10px">Add to cart</button>
-                            <button id="btn-add-and-receipt" style="padding:8px 10px">Add & Receipt</button>
-                        </div>
-                    </div>`;
-                    // wire add to cart (attach handler immediately)
-                    const addBtn = document.getElementById('btn-add-cart');
-                    const qtyInput = document.getElementById('cart-qty');
-                    if(addBtn){
-                        addBtn.onclick = ()=>{
-                            try{
-                                const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
-                                const qty = isNaN(q) ? 1 : qtyInput ? Math.max(1, q) : 1;
-                                console.log('Add-to-cart clicked (inline)', {code: p && p.code, qty, product: p});
-                                // ensure cart exists
-                                if(!Array.isArray(cart)) cart = [];
-                                // simple add: increment if exists, otherwise push
-                                const existing = cart.find(c=>c.code==p.code);
-                                if(existing){ existing.qty = (existing.qty||0) + qty; }
-                                else { cart.push({code: p.code, name: p.name, desc: p.desc, price: p.price||0, qty: qty}); }
-                                saveCart();
-                                // show quick inline confirmation in foundProduct area
-                                try{
-                                    const note = document.createElement('div'); note.style.marginTop='8px'; note.style.color='#059669'; note.textContent = `Added ${qty} × ${p.name || p.code} to cart`;
-                                    foundProduct.appendChild(note);
-                                    setTimeout(()=>{ try{ note.remove(); }catch(e){} }, 2500);
-                                }catch(e){ console.warn(e); }
-                                // scroll cart into view so user sees update
-                                try{ const cartListEl = document.getElementById('cart-list'); if(cartListEl) cartListEl.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
-                            }catch(err){ console.error('Inline add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
-                        };
-                        const addAndReceiptBtn = document.getElementById('btn-add-and-receipt');
-                        if(addAndReceiptBtn){
-                            addAndReceiptBtn.onclick = ()=>{
-                                try{
-                                    const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
-                                    const qty = isNaN(q) ? 1 : qtyInput ? Math.max(1, q) : 1;
-                                    if(!Array.isArray(cart)) cart = [];
-                                    const existing = cart.find(c=>c.code==p.code);
-                                    if(existing){ existing.qty = (existing.qty||0) + qty; }
-                                    else { cart.push({code: p.code, name: p.name, desc: p.desc, price: p.price||0, qty: qty}); }
-                                    saveCart();
-                                    // switch to receipt/bon tab
-                                    try{ if(tabReceipt){ tabReceipt.click(); } else { panelReceipt.style.display='block'; panelScan.style.display='none'; } }catch(e){}
-                                }catch(err){ console.error('Add & Receipt failed', err); alert('Could not add to receipt: ' + (err && err.message ? err.message : String(err))); }
-                            };
-                        }
-                    } else {
-                        console.warn('Add button not found in DOM');
-                    }
-                }else{
-                    foundProduct.innerHTML = '<div class="hint">Product not found in database.</div>';
-                }
-            }
-
-            // init
-            loadProducts();
-
-            // CART: simple cart stored in localStorage
-            const CART_KEY = 'cart-db-v1';
-            let cart = [];
-            function loadCart(){ try{ const raw = localStorage.getItem(CART_KEY); cart = raw?JSON.parse(raw):[]; }catch(e){ cart=[] } renderCart(); }
-            function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); renderCart(); renderReceipt(); }
-            function renderCart(){
-                const list = document.getElementById('cart-list'); const totalEl = document.getElementById('cart-total');
-                if(!list) return;
-                list.innerHTML = '';
-                if(!cart.length){ list.innerHTML = '<div class="hint">Cart is empty</div>'; totalEl.textContent = '$0.00'; return; }
-                let total = 0;
-                cart.forEach((it, idx)=>{
-                    const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px 0';
-                    const left = document.createElement('div'); left.innerHTML = `<div style="font-weight:600">${escapeHtml(it.name)}</div><div style="font-size:13px;color:#555">${escapeHtml(it.code)} • ${escapeHtml(it.desc||'')}</div>`;
-                    const right = document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; right.style.gap='8px';
-                    const qty = document.createElement('input'); qty.type='number'; qty.min='1'; qty.value = it.qty; qty.style.width='64px'; qty.style.padding='6px'; qty.onchange = ()=>{ const v = parseInt(qty.value||'1',10); it.qty = isNaN(v)?1:v; saveCart(); };
-                    const price = document.createElement('div'); const pnum = parseFloat(it.price) || 0; price.textContent = '$'+(pnum.toFixed(2));
-                    const rm = document.createElement('button'); rm.textContent='Remove'; rm.onclick = ()=>{ cart.splice(idx,1); saveCart(); };
-                    right.appendChild(qty); right.appendChild(price); right.appendChild(rm);
-                    row.appendChild(left); row.appendChild(right);
-                    list.appendChild(row);
-                    total += (pnum * (it.qty||1));
+                // Populate dropdown
+                videoSelect.innerHTML = '';
+                devices.forEach((device, idx) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${idx + 1}`;
+                    videoSelect.appendChild(option);
                 });
-                totalEl.textContent = '$' + total.toFixed(2);
-                // also update receipt preview when cart changes
-                try{ renderReceipt(); }catch(e){}
-            }
-            function addToCart(code, qty){
-                try{
-                    // ensure cart array exists
-                    if(!Array.isArray(cart)) cart = [];
-                    const p = products.find(x=>x.code==code || x.code===code);
-                    if(!p){ console.warn('addToCart: product not found for code', code); return false; }
-                    const existing = cart.find(c=>c.code==code || c.code===code);
-                    if(existing){ existing.qty = (existing.qty||0) + (qty||1); }
-                    else { cart.push({code:p.code, name:p.name, desc:p.desc, price:p.price||0, qty: qty||1}); }
-                    saveCart();
-                    try{ setPermHint('Added to cart', '#059669'); }catch(e){}
-                    return true;
-                }catch(err){ console.error('addToCart error', err); return false; }
-            }
-            const btnClearCart = document.getElementById('btn-clear-cart'); if(btnClearCart) btnClearCart.onclick = ()=>{ if(confirm('Clear cart?')){ cart=[]; saveCart(); } };
-            // load cart on start
-            loadCart();
-            // Checkout handler: generate receipt and clear cart
-            const btnCheckout = document.getElementById('btn-checkout');
-            const paymentAmountInput = document.getElementById('payment-amount');
-            if(btnCheckout){ btnCheckout.onclick = ()=>{
-                try{
-                    if(!cart || !cart.length){ alert('Cart is empty'); return; }
-                    // compute total
-                    let total = 0; cart.forEach(it=>{ total += ((parseFloat(it.price)||0) * (it.qty||1)); });
-                    const paid = parseFloat(paymentAmountInput && paymentAmountInput.value ? paymentAmountInput.value : String(total));
-                    if(isNaN(paid)){ alert('Enter a valid paid amount'); return; }
-                    const change = Math.max(0, paid - total);
-                    // render receipt and include paid/change info in preview
-                    try{ renderReceipt(); }catch(e){ console.warn(e); }
-                    // show change in receipt preview area
-                    try{ const el = document.getElementById('receipt-preview'); if(el){ const foot = document.createElement('div'); foot.style.marginTop='8px'; foot.innerHTML = `<div style="display:flex;justify-content:space-between;font-weight:700"><div>Paid</div><div>$${paid.toFixed(2)}</div></div><div style="display:flex;justify-content:space-between;font-weight:700"><div>Change</div><div>$${change.toFixed(2)}</div></div>`; el.appendChild(foot); } }catch(e){}
-                    // open receipt tab for printing
-                    try{ if(tabReceipt){ tabReceipt.click(); } }catch(e){}
-                    // clear cart after checkout
-                    cart = []; saveCart();
-                    alert('Checkout complete. Change: $' + change.toFixed(2));
-                }catch(e){ console.error('Checkout failed', e); alert('Checkout error: ' + (e && e.message? e.message : String(e))); }
-            }; }
-            // preload saved company settings for receipt preview
-            try{ loadCompanySettings(); renderReceipt(); }catch(e){}
 
-            // show PWA install prompt guidance
-            window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.deferredPrompt = e; });
-        </script>
+                // Set stored camera or last available
+                if (!selectedDeviceId) {
+                    selectedDeviceId = devices[devices.length - 1].deviceId;
+                }
+                videoSelect.value = selectedDeviceId;
+
+                startScanning(selectedDeviceId);
+            } catch(err) {
+                console.error("Eroare cameră:", err);
+            }
+        }
+
+        function changeCamera() {
+            const select = document.getElementById('camera-select');
+            selectedDeviceId = select.value;
+            localStorage.setItem('pos_camera_id', selectedDeviceId);
+            try { codeReader.reset(); } catch(e) {}
+            startScanning(selectedDeviceId);
+        }
+
+        function startScanning(deviceId) {
+            try { codeReader.reset(); } catch(e) {}
+
+            // Ensure deviceId is valid
+            if(!deviceId) {
+                console.warn('No deviceId provided to startScanning');
+                return;
+            }
+
+            // Start scanning; ZXing will attach stream to the video element
+            codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+                if (result) {
+                    handleScan(result.text);
+                }
+                // ignore intermittent errors to avoid flooding console
+            }).catch(e => {
+                console.error('Failed to start decoding from video device:', e);
+            });
+        }
+
+        async function requestCameraPermission() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // stop tracks immediately — we only needed permission to enumerate devices
+                stream.getTracks().forEach(t => t.stop());
+                const btn = document.getElementById('request-perm-btn');
+                if(btn) btn.style.display = 'none';
+                // re-init camera flow now that permission is granted
+                await initCamera();
+            } catch(err) {
+                console.error('Permission request failed:', err);
+                alert('Permisiune refuzată. Verifică setările browserului pentru a permite accesul la cameră.');
+            }
+        }
+
+        function handleScan(code) {
+            // Prevenire scanare dublă rapidă (debounce simplu)
+            if(window.lastScan === code && (Date.now() - window.lastScanTime) < 1500) return;
+            window.lastScan = code;
+            window.lastScanTime = Date.now();
+
+            // Feedback vizual și auditiv
+            beep();
+            flashScreen();
+            if(navigator.vibrate) navigator.vibrate(200);
+
+            // Logică produs
+            if (inventory[code]) {
+                addToCart(inventory[code]);
+            } else {
+                // Mod adăugare rapidă
+                if(confirm(`Produs necunoscut (${code}). Vrei să îl adaugi?`)) {
+                    document.getElementById('db-code').value = code;
+                    switchTab('inventory', document.querySelectorAll('.nav-item')[1]);
+                    document.getElementById('db-name').focus();
+                }
+            }
+        }
+
+        function flashScreen() {
+            const overlay = document.getElementById('scan-feedback');
+            overlay.style.display = 'block';
+            setTimeout(() => { overlay.style.display = 'none'; }, 200);
+        }
+
+        // --- NAVIGARE SECURIATĂ ---
+        function switchTab(id, btn) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
+            document.getElementById('tab-' + id).classList.add('active');
+            if(btn) btn.classList.add('active');
+
+            // Gestionare cameră: Oprire dacă nu suntem pe vânzare pentru a economisi baterie
+            if(id === 'sale') {
+                if(selectedDeviceId) startScanning(selectedDeviceId);
+            } else {
+                codeReader.reset();
+            }
+        }
+
+        function accessSettings(btn) {
+            const inputPin = prompt("🔒 Introdu PIN-ul de securitate:");
+            if(inputPin === company.pin) {
+                switchTab('settings', btn);
+            } else {
+                alert("PIN Incorect!");
+            }
+        }
+
+        // --- CART LOGIC ---
+        function addToCart(product) {
+            const existing = cart.find(i => i.code === product.code);
+            if(existing) existing.qty++;
+            else cart.push({...product, qty: 1});
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const display = document.getElementById('cart-display');
+            if(cart.length === 0) {
+                display.innerHTML = '<div style="text-align:center; margin-top:50px; color:var(--muted)">Coșul este gol.<br>Scanează un produs.</div>';
+                document.getElementById('grand-total').innerText = "0.00 LEI";
+                return;
+            }
+
+            display.innerHTML = cart.map((item, idx) => `
+                <div class="cart-item">
+                    <div style="flex:1">
+                        <div style="font-weight:bold; font-size:1.05rem">${item.name}</div>
+                        <small style="color:var(--muted)">${item.code}</small>
+                    </div>
+                    <div style="text-align:right; margin-right:10px">
+                        <div>${item.qty} x ${item.price.toFixed(2)}</div>
+                        <div style="font-weight:bold">${(item.qty * item.price).toFixed(2)}</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:2px">
+                        <button class="btn btn-primary" style="padding:5px 10px; font-size:0.8rem" onclick="modQty(${idx}, 1)">+</button>
+                        <button class="btn btn-danger" style="padding:5px 10px; font-size:0.8rem" onclick="modQty(${idx}, -1)">-</button>
+                    </div>
+                </div>
+            `).join('');
+
+            const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+            document.getElementById('grand-total').innerText = total.toFixed(2) + " LEI";
+        }
+
+        function modQty(idx, amount) {
+            cart[idx].qty += amount;
+            if(cart[idx].qty <= 0) cart.splice(idx, 1);
+            updateCartUI();
+        }
+
+        function manualAddPrompt() {
+            const code = prompt("Introdu manual codul:");
+            if(code) handleScan(code);
+        }
+
+        function searchPrompt() {
+            const term = prompt("Caută după nume:");
+            if(!term) return;
+            const found = Object.values(inventory).find(p => p.name.toLowerCase().includes(term.toLowerCase()));
+            if(found) addToCart(found);
+            else alert("Produsul nu a fost găsit.");
+        }
+
+        function calcRest() {
+            const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+            const received = parseFloat(document.getElementById('cash-received').value);
+            if(!received) return;
+            alert(`REST DE PLATĂ: ${(received - total).toFixed(2)} LEI`);
+        }
+
+        // --- CHECKOUT & PRINT ---
+        function finalizeCheckout() {
+            if(cart.length === 0) return alert("Coș gol!");
+            
+            const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+            const receivedVal = document.getElementById('cash-received').value;
+            const received = receivedVal ? parseFloat(receivedVal) : total;
+
+            if(received < total) return alert(`Suma este prea mică! Lipsesc ${(total - received).toFixed(2)} LEI`);
+
+            // Creare obiect vânzare
+            const saleData = {
+                id: Date.now(),
+                date: new Date().toLocaleString('ro-RO'),
+                items: [...cart],
+                total: total,
+                received: received,
+                company: {...company}
+            };
+
+            // Salvare în istoric
+            salesHistory.unshift(saleData);
+            if(salesHistory.length > 50) salesHistory.pop(); // Păstrăm ultimele 50
+            localStorage.setItem('pos_history', JSON.stringify(salesHistory));
+            renderHistory();
+
+            // Printare
+            printReceipt(saleData);
+
+            // Reset
+            cart = [];
+            document.getElementById('cash-received').value = '';
+            updateCartUI();
+        }
+
+        function printReceipt(data) {
+            const tvaCota = parseFloat(data.company.tva) / 100;
+            const tvaVal = data.total - (data.total / (1 + tvaCota));
+            
+            const receiptHTML = `
+                <center>
+                    ${data.company.logo ? `<img src="${data.company.logo}" style="max-width:40mm; display:block; margin:0 auto"><br>` : ''}
+                    <h2 style="margin:0">${data.company.name}</h2>
+                    <div>CUI: ${data.company.cui}</div>
+                    <div>${data.company.addr.replace(/\n/g, '<br>')}</div>
+                    <div>--------------------------------</div>
+                    <h3 style="margin:5px 0">BON FISCAL</h3>
+                    <div>Nr: ${data.id}</div>
+                    <div>Data: ${data.date}</div>
+                    <div>--------------------------------</div>
+                </center>
+                <div style="text-align:left">
+                    ${data.items.map(i => `
+                        <div style="display:flex;justify-content:space-between; margin-bottom:2px">
+                            <span>${i.name}<br><small>${i.qty} x ${i.price.toFixed(2)}</small></span>
+                            <span style="align-self:end">${(i.price * i.qty).toFixed(2)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                <center>
+                    <div>--------------------------------</div>
+                </center>
+                <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:1.2em; margin:5px 0">
+                    <span>TOTAL</span><span>${data.total.toFixed(2)} LEI</span>
+                </div>
+                <div style="font-size:0.8em; text-align:right">din care TVA (${data.company.tva}%): ${tvaVal.toFixed(2)}</div>
+                <br>
+                <div style="display:flex;justify-content:space-between"><span>Numerar:</span><span>${data.received.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Rest:</span><span>${(data.received - data.total).toFixed(2)}</span></div>
+                <center>
+                    <br>*** VĂ MULȚUMIM! ***<br>
+                </center>
+            `;
+            
+            const printZone = document.getElementById('print-receipt');
+            printZone.innerHTML = receiptHTML;
+            window.print();
+        }
+
+        // --- GESTIUNE STOC & ISTORIC ---
+        function saveToInventory() {
+            const code = document.getElementById('db-code').value.trim();
+            const name = document.getElementById('db-name').value.trim();
+            const price = parseFloat(document.getElementById('db-price').value);
+
+            if(!code || !name || isNaN(price) || price <= 0) {
+                return alert("Te rog completează toate câmpurile corect!");
+            }
+
+            inventory[code] = { code, name, price };
+            localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+            
+            // Curățare input-uri
+            document.getElementById('db-code').value = '';
+            document.getElementById('db-name').value = '';
+            document.getElementById('db-price').value = '';
+            
+            renderInventory();
+            alert("Produs Salvat!");
+        }
+
+        function renderInventory() {
+            const list = document.getElementById('inventory-list');
+            const items = Object.values(inventory);
+            document.getElementById('items-count').innerText = `${items.length} produse`;
+
+            list.innerHTML = items.map(p => `
+                <div class="cart-item" style="background:var(--card)">
+                    <div>
+                        <div style="font-weight:bold">${p.name}</div>
+                        <small style="color:var(--muted)">Cod: ${p.code}</small>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px">
+                        <span style="font-weight:bold; color:var(--success)">${p.price.toFixed(2)} LEI</span>
+                        <button class="btn btn-danger" style="padding:5px 10px" onclick="deleteProd('${p.code}')">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteProd(code) {
+            if(confirm("Sigur ștergi produsul?")) {
+                delete inventory[code];
+                localStorage.setItem('pos_inventory', JSON.stringify(inventory));
+                renderInventory();
+            }
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            if(salesHistory.length === 0) {
+                list.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">Nicio vânzare înregistrată.</div>';
+                return;
+            }
+
+            list.innerHTML = salesHistory.map(sale => `
+                <div class="history-item">
+                    <div>
+                        <div style="font-weight:bold">${sale.date}</div>
+                        <small style="color:var(--muted)">${sale.items.length} produse</small>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center">
+                        <span style="font-weight:bold; font-size:1.1rem">${sale.total.toFixed(2)} LEI</span>
+                        <button class="btn btn-primary" style="padding:8px 12px" onclick='reprintHistory(${JSON.stringify(sale)})'>🖨️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function reprintHistory(saleObj) {
+            printReceipt(saleObj);
+        }
+
+        function clearHistory() {
+            if(confirm("Sigur ștergi tot istoricul?")) {
+                salesHistory = [];
+                localStorage.setItem('pos_history', JSON.stringify(salesHistory));
+                renderHistory();
+            }
+        }
+
+        // --- GESTIUNE SETĂRI ---
+        function applySettings() {
+            document.getElementById('header-company-name').innerText = company.name;
+            document.getElementById('set-comp-name').value = company.name;
+            document.getElementById('set-comp-cui').value = company.cui;
+            document.getElementById('set-comp-addr').value = company.addr;
+            document.getElementById('set-comp-logo').value = company.logo;
+            document.getElementById('set-tva').value = company.tva;
+            document.getElementById('set-touch-toggle').checked = company.touch;
+            document.getElementById('set-pin').value = company.pin;
+            
+            if(company.logo) {
+                document.getElementById('logo-container').innerHTML = `<img src="${company.logo}">`;
+            } else {
+                document.getElementById('logo-container').innerText = "POS";
+            }
+            toggleTouchMode(company.touch);
+        }
+
+        function updateCompSetting(key, val) {
+            company[key] = val;
+            localStorage.setItem('pos_company', JSON.stringify(company));
+            applySettings();
+        }
+
+        function toggleTouchMode(enabled) {
+            updateCompSetting('touch', enabled);
+            if(enabled) document.body.classList.add('touch-mode');
+            else document.body.classList.remove('touch-mode');
+        }
+
+        function hardReset() {
+            if(confirm("ATENȚIE! Se vor șterge toate produsele, istoricul și setările.\nEști sigur?")) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        // --- UTILITARE ---
+        function beep() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 1200;
+            osc.type = 'sine';
+            gain.gain.value = 0.1;
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        }
+    </script>
     </body>
 </html>
