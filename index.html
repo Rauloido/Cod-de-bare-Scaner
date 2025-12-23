@@ -119,7 +119,7 @@
                 <div class="camera-controls">
                     <span style="color:var(--muted)">📸 Cameră: <span id="camera-status" style="font-weight:700; margin-left:6px">Se încearcă...</span></span>
                     <button id="allow-camera-btn" class="btn btn-primary" style="margin-left:12px; display:none">Permite Cameră</button>
-                    <span id="camera-error" style="color:var(--warning); margin-left:12px; font-size:0.9rem"></span>
+                    <span id="-error" style="color:var(--warning); margin-left:12px; font-size:0.9rem"></span>
                 </div>
 
                 <div style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:15px">
@@ -247,7 +247,7 @@
         let salesHistory = JSON.parse(localStorage.getItem('pos_history')) || [];
         let cart = [];
         let codeReader = null;
-        let selectedDeviceId = localStorage.getItem('pos_camera_id') || null;
+        let selectedDeviceId = localStorage.getItem('pos__id') || null;
 
         // --- INITIALIZARE ---
         window.onload = async () => {
@@ -303,7 +303,7 @@
             if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
 
             // Check permission state via Permissions API when available
-            let permissionGranted = false;
+            let permissionGranted = true;
             let permState = null;
             if(navigator.permissions && navigator.permissions.query) {
                 try {
@@ -356,10 +356,35 @@
                     return;
                 }
 
-                // choose stored or first available device
+                // choose stored or first available device, preferring back/rear/environment cameras
                 if(videoInputs.length > 0) {
+                    // try to find a label that indicates a back camera
+                    const backKeywords = ['back','rear','environment','kamera rear','rear camera','wide','usb','logitech','hd'];
+                    let backCam = videoInputs.find(d => {
+                        if(!d.label) return false;
+                        const lbl = d.label.toLowerCase();
+                        return backKeywords.some(k => lbl.includes(k));
+                    });
+
+                    // If none found, but we have permission, try facingMode constraint to get environment camera
+                    if(!backCam) {
+                        try {
+                            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+                            const track = s.getVideoTracks()[0];
+                            const settings = track.getSettings();
+                            if(settings && settings.deviceId) {
+                                backCam = videoInputs.find(d => d.deviceId === settings.deviceId) || null;
+                            }
+                            // stop temporary stream
+                            s.getTracks().forEach(t => t.stop());
+                        } catch(e) {
+                            // facingMode request failed or not supported — ignore
+                            console.warn('facingMode request failed or unsupported:', e);
+                        }
+                    }
+
                     if(!selectedDeviceId || !videoInputs.some(d=>d.deviceId===selectedDeviceId)) {
-                        selectedDeviceId = videoInputs[0].deviceId;
+                        selectedDeviceId = (backCam ? backCam.deviceId : videoInputs[0].deviceId);
                     }
                 }
 
