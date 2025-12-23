@@ -111,7 +111,7 @@
             
             <div id="tab-sale" class="panel active">
                 <div class="scanner-wrapper">
-                    <video id="video"></video>
+                    <video id="video" autoplay playsinline muted></video>
                     <div class="laser"></div>
                     <div id="scan-feedback" class="scan-overlay"></div>
                 </div>
@@ -121,6 +121,8 @@
                     <select id="camera-select" onchange="changeCamera()">
                         <option value="" disabled selected>Se încarcă camerele...</option>
                     </select>
+                    <button id="start-camera-btn" class="btn btn-primary" style="margin-left:6px" onclick="startCameraFromUI()">Pornește Cameră</button>
+                    <span id="camera-error" style="color:var(--warning); margin-left:8px; font-size:0.9rem"></span>
                 </div>
 
                 <div style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:15px">
@@ -285,67 +287,67 @@
         // --- CAMERA & SCANNING ---
         async function initCamera() {
             const videoSelect = document.getElementById('camera-select');
+            const cameraError = document.getElementById('camera-error');
 
-            // If running from file:// protocol many browsers block getUserMedia.
+            if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                cameraError.innerText = 'Camera indisponibilă în acest browser.';
+                return;
+            }
+
             if(location.protocol === 'file:') {
-                console.warn('Running from file:// — camera access may be blocked by the browser.');
+                cameraError.innerText = 'Servește fișierul prin HTTPS sau localhost pentru acces cameră.';
+            } else {
+                cameraError.innerText = '';
             }
 
-            // Try to request permission first so device labels are available
+            // Ensure codeReader exists
+            if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+
+            // Try to get permission, but continue to enumerate devices even if denied
+            let permissionGranted = false;
             try {
-                await navigator.mediaDevices.getUserMedia({ video: true });
-            } catch (permErr) {
-                console.warn('Camera permission not granted or unavailable:', permErr);
-                videoSelect.innerHTML = '';
-                const opt = document.createElement('option');
-                opt.disabled = true;
-                opt.selected = true;
-                opt.text = 'Permite accesul la cameră...';
-                videoSelect.appendChild(opt);
-
-                // Create a request permission button if not present
-                if(!document.getElementById('request-perm-btn')) {
-                    const controls = document.querySelector('.camera-controls');
-                    const requestBtn = document.createElement('button');
-                    requestBtn.id = 'request-perm-btn';
-                    requestBtn.className = 'btn btn-primary';
-                    requestBtn.style.marginLeft = 'auto';
-                    requestBtn.innerText = 'Permite Cameră';
-                    requestBtn.onclick = requestCameraPermission;
-                    controls.appendChild(requestBtn);
-                } else {
-                    document.getElementById('request-perm-btn').style.display = 'inline-flex';
-                }
-
-                return; // stop until permission granted
+                const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                s.getTracks().forEach(t => t.stop());
+                permissionGranted = true;
+            } catch(e) {
+                console.warn('getUserMedia failed (permission?):', e);
+                // show request button to allow retry
+                if(document.getElementById('request-perm-btn')) document.getElementById('request-perm-btn').style.display = 'inline-flex';
+                cameraError.innerText = 'Permite accesul la cameră pentru a afișa numele dispozitivelor.';
             }
 
             try {
-                const devices = await codeReader.listVideoInputDevices();
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoInputs = devices.filter(d => d.kind === 'videoinput');
 
-                if(devices.length === 0) {
-                    alert("Nu am detectat nicio cameră!");
+                if(videoInputs.length === 0) {
+                    cameraError.innerText = 'Nu au fost detectate camere.';
+                    videoSelect.innerHTML = '<option disabled selected>Fără camere</option>';
                     return;
                 }
 
-                // Populate dropdown
+                // Populate dropdown even if labels are empty (permission not granted)
                 videoSelect.innerHTML = '';
-                devices.forEach((device, idx) => {
+                videoInputs.forEach((device, idx) => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
                     option.text = device.label || `Camera ${idx + 1}`;
                     videoSelect.appendChild(option);
                 });
 
-                // Set stored camera or last available
-                if (!selectedDeviceId) {
-                    selectedDeviceId = devices[devices.length - 1].deviceId;
+                // choose stored or first
+                if(!selectedDeviceId || !Array.from(videoSelect.options).some(o=>o.value===selectedDeviceId)) {
+                    selectedDeviceId = videoInputs[0].deviceId;
                 }
                 videoSelect.value = selectedDeviceId;
 
-                startScanning(selectedDeviceId);
+                // If permission already granted, start scanning automatically
+                if(permissionGranted) {
+                    try { startScanning(selectedDeviceId); cameraError.innerText = ''; } catch(e) { console.error(e); }
+                }
             } catch(err) {
-                console.error("Eroare cameră:", err);
+                console.error('enumerateDevices error:', err);
+                cameraError.innerText = 'Eroare la listarea dispozitivelor.';
             }
         }
 
@@ -355,6 +357,27 @@
             localStorage.setItem('pos_camera_id', selectedDeviceId);
             try { codeReader.reset(); } catch(e) {}
             startScanning(selectedDeviceId);
+        }
+
+        // Manual start from UI (useful when permission wasn't auto-granted)
+        function startCameraFromUI() {
+            const cameraError = document.getElementById('camera-error');
+            try {
+                if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+                const select = document.getElementById('camera-select');
+                if(!select || !select.value) {
+                    cameraError.innerText = 'Selectează o cameră din lista de lângă buton.';
+                    return;
+                }
+                cameraError.innerText = '';
+                selectedDeviceId = select.value;
+                localStorage.setItem('pos_camera_id', selectedDeviceId);
+                try { codeReader.reset(); } catch(e) {}
+                startScanning(selectedDeviceId);
+            } catch(err) {
+                console.error('startCameraFromUI error:', err);
+                cameraError.innerText = 'Nu s-a putut porni camera. Verifică permisiunile.';
+            }
         }
 
         function startScanning(deviceId) {
