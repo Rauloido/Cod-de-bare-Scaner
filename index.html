@@ -118,6 +118,7 @@
                 
                 <div class="camera-controls">
                     <span style="color:var(--muted)">📸 Cameră: <span id="camera-status" style="font-weight:700; margin-left:6px">Se încearcă...</span></span>
+                    <button id="allow-camera-btn" class="btn btn-primary" style="margin-left:12px; display:none">Permite Cameră</button>
                     <span id="camera-error" style="color:var(--warning); margin-left:12px; font-size:0.9rem"></span>
                 </div>
 
@@ -284,6 +285,7 @@
         async function initCamera() {
             const cameraError = document.getElementById('camera-error');
             const cameraStatus = document.getElementById('camera-status');
+            const allowBtn = document.getElementById('allow-camera-btn');
             let attemptedPermissionRequest = window._pos_attemptedPermission || false;
 
             if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
@@ -300,24 +302,46 @@
             // Ensure codeReader exists
             if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
 
-            // Try to get permission, but continue to enumerate devices even if denied
+            // Check permission state via Permissions API when available
             let permissionGranted = false;
-            try {
-                const s = await navigator.mediaDevices.getUserMedia({ video: true });
-                s.getTracks().forEach(t => t.stop());
+            let permState = null;
+            if(navigator.permissions && navigator.permissions.query) {
+                try {
+                    const status = await navigator.permissions.query({ name: 'camera' });
+                    permState = status.state; // 'granted' | 'denied' | 'prompt'
+                    status.onchange = () => { initCamera(); };
+                } catch(e) {
+                    // Some browsers don't support 'camera' name — fallback below
+                }
+            }
+
+            // If permissions API says granted, mark it. Otherwise try a gentle getUserMedia only when needed.
+            if(permState === 'granted') {
                 permissionGranted = true;
-            } catch(e) {
-                console.warn('getUserMedia failed (permission?):', e);
-                cameraError.innerText = 'Permisiune cameră necesară — solicitare în curs...';
-                // Try one automatic permission request (avoid infinite loop)
+            } else if(permState === 'prompt' || permState === 'denied' || permState === null) {
+                // show allow button so user can trigger getUserMedia (user gesture required in some browsers)
+                if(allowBtn) {
+                    allowBtn.style.display = 'inline-flex';
+                    allowBtn.onclick = async () => {
+                        allowBtn.disabled = true;
+                        cameraError.innerText = 'Solicitare permisie...';
+                        try {
+                            await requestCameraPermission();
+                        } catch(_) {}
+                        allowBtn.disabled = false;
+                    };
+                }
+                // Try one programmatic request — may be blocked without user gesture
                 if(!attemptedPermissionRequest) {
                     window._pos_attemptedPermission = true;
                     attemptedPermissionRequest = true;
                     try {
-                        await requestCameraPermission();
+                        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                        s.getTracks().forEach(t => t.stop());
                         permissionGranted = true;
-                    } catch(reqErr) {
-                        console.warn('Automatic permission retry failed:', reqErr);
+                    } catch(e) {
+                        console.warn('getUserMedia auto request failed:', e);
+                        // wait for user click on allowBtn
                     }
                 }
             }
@@ -384,13 +408,11 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 // stop tracks immediately — we only needed permission to enumerate devices
                 stream.getTracks().forEach(t => t.stop());
-                const btn = document.getElementById('request-perm-btn');
-                if(btn) btn.style.display = 'none';
                 // re-init camera flow now that permission is granted
                 await initCamera();
             } catch(err) {
                 console.error('Permission request failed:', err);
-                alert('Permisiune refuzată. Verifică setările browserului pentru a permite accesul la cameră.');
+                alert('Permisiune refuzată sau blocată. Deschide setările site-ului în browser pentru a permite camera.');
             }
         }
 
