@@ -118,6 +118,7 @@
 
                         <div style="margin-top:10px" class="actions">
                             <button id="btn-generate">Generate Barcode</button>
+                            <button id="btn-scan-fill">Scan & Fill</button>
                             <button id="btn-save" disabled>Save Product</button>
                         </div>
 
@@ -208,11 +209,11 @@
                     <div id="scan-result" style="display:flex;gap:12px;align-items:flex-start">
                         <div style="flex:1">
                             <strong>Result</strong>
-                            <div id="result-text" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fafafa;min-height:70px"></div>
+                            <div id="result-text" style="padding:8px;border:1px solid #000000;border-radius:6px;background:#fafafa;min-height:70px"></div>
                         </div>
                         <div style="width:260px">
                             <strong>Found product</strong>
-                            <div id="found-product" style="padding:8px;border:1px solid #eee;border-radius:6px;background:#fff;min-height:70px"></div>
+                            <div id="found-product" style="padding:8px;border:1px solid #000000;border-radius:6px;background:#fff;min-height:70px"></div>
                         </div>
                     </div>
                     <div id="cart-panel" style="margin-top:12px;padding:12px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:var(--panel)">
@@ -286,9 +287,11 @@
             let lastDeleted = null;
             let undoTimeoutId = null;
             let codeReader = null;
+            let currentDeviceId = null;
             let selectedImageBase64 = null;
             let scanningPaused = false;
             let lastScanned = {value:null, ts:0};
+            let fillMode = false;
             const SCAN_COOLDOWN = 1400; // ms
             const cameraSelect = document.getElementById('camera-select'); // may be null now (select removed)
             // hidden canvas to crop video center for scanning (improves detection reliability)
@@ -525,6 +528,9 @@
                     btnDownload.disabled = false;
                 }catch(err){alert('Barcode generation failed: '+err.message)}
             }
+
+            const btnScanFill = document.getElementById('btn-scan-fill');
+            if(btnScanFill){ btnScanFill.onclick = async ()=>{ fillMode = true; try{ await requestCameraPermission(); tabScan.click(); }catch(e){ console.warn('scan fill start failed', e); fillMode=false; } }; }
 
             // image upload
             pimage.onchange = (e)=>{
@@ -803,7 +809,8 @@
                                                 try{ cameraSelect.value = preferred.deviceId; cameraSelect.style.display = devices.length > 1 ? 'inline-block' : 'none'; }catch(e){}
                                             }
                                         }
-                                        const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : ((cameraSelect && cameraSelect.value) ? cameraSelect.value : (preferred ? preferred.deviceId : undefined));
+                    const deviceId = (opts.forceDeviceId) ? opts.forceDeviceId : ((cameraSelect && cameraSelect.value) ? cameraSelect.value : (preferred ? preferred.deviceId : undefined));
+                    currentDeviceId = deviceId;
                     // start ZXing decode on the chosen device
                     codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
                         if(result){
@@ -994,7 +1001,38 @@
                     alert('Torch not supported on this device/browser');
                 }catch(e){ console.warn('setTorch failed', e); alert('Torch error: ' + (e && e.message?e.message:String(e))); }
             }
-            if(btnTorch) btnTorch.onclick = ()=>{ setTorch(!torchOn); };
+            async function findTorchFriendlyDevice(){
+                try{
+                    const devs = await navigator.mediaDevices.enumerateDevices();
+                    const vids = devs.filter(d=>d.kind==='videoinput');
+                    if(!vids.length) return null;
+                    const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
+                    const backRegex = /(back|rear|environment|main)/i;
+                    // prefer back camera without ultra keywords
+                    let p = vids.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
+                    if(!p) p = vids.find(d=> backRegex.test(d.label));
+                    if(!p) p = vids[vids.length-1] || vids[0];
+                    return p || null;
+                }catch(e){ console.warn('findTorchFriendlyDevice failed', e); return null; }
+            }
+
+            if(btnTorch) btnTorch.onclick = async ()=>{
+                // attempt to toggle torch on current track
+                try{
+                    const stream = video.srcObject;
+                    const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+                    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+                    if(caps && caps.torch){ await setTorch(!torchOn); return; }
+                }catch(e){ /* ignore */ }
+                // otherwise try switching to a torch-friendly back camera
+                const candidate = await findTorchFriendlyDevice();
+                if(!candidate || !candidate.deviceId){ alert('No suitable camera found to enable flash/torch. Try using an Android device or a browser that supports torch.'); return; }
+                try{
+                    stopCameraScan();
+                    await startCameraScan({ forceDeviceId: candidate.deviceId });
+                    setTimeout(async ()=>{ try{ await setTorch(true); }catch(e){ console.warn('setTorch after switch failed', e); } }, 800);
+                }catch(e){ console.warn('switch to candidate failed', e); alert('Could not switch camera for torch: ' + (e && e.message? e.message : String(e))); }
+            };
             btnStopScan.onclick = stopCameraScan;
             const btnTestCamera = document.getElementById('btn-test-camera');
             // Quick camera test: enumerate devices and open a basic stream (separate from ZXing)
@@ -1223,6 +1261,19 @@
                     }
                     const res = await crossValidateBarcode(text, sourceCanvas);
                     if(res.match){
+                        // If we're in fillMode (user clicked Scan & Fill), populate the Generate form
+                        if(fillMode){
+                            try{
+                                pcode.value = text;
+                                currentBarcodeValue = text;
+                                try{ JsBarcode(barcodeSvg, text, {format: 'CODE128', displayValue: true, width:2, height:60}); btnSave.disabled = false; btnDownload.disabled = false; }catch(e){}
+                            }catch(e){ console.warn('fillMode populate failed', e); }
+                            fillMode = false;
+                            // stop camera and return to Generate tab
+                            try{ stopCameraScan(); }catch(e){}
+                            try{ tabGenerate.click(); }catch(e){}
+                            return;
+                        }
                         // validated — forward to product handler
                         barcodeConfirmCounts[text] = 0;
                         onBarcodeValidated(text);
@@ -1243,6 +1294,7 @@
                             <label style="font-size:13px">Qty</label>
                             <input id="cart-qty" type="number" value="1" min="1" style="width:72px;padding:6px;border-radius:6px;border:1px solid #ddd">
                             <button id="btn-add-cart" style="padding:8px 10px">Add to cart</button>
+                            <button id="btn-add-and-receipt" style="padding:8px 10px">Add & Receipt</button>
                         </div>
                     </div>`;
                     // wire add to cart (attach handler immediately)
@@ -1271,6 +1323,22 @@
                                 try{ const cartListEl = document.getElementById('cart-list'); if(cartListEl) cartListEl.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
                             }catch(err){ console.error('Inline add to cart failed', err); alert('Could not add to cart: ' + (err && err.message ? err.message : String(err))); }
                         };
+                        const addAndReceiptBtn = document.getElementById('btn-add-and-receipt');
+                        if(addAndReceiptBtn){
+                            addAndReceiptBtn.onclick = ()=>{
+                                try{
+                                    const q = qtyInput ? parseInt(qtyInput.value||'1', 10) : 1;
+                                    const qty = isNaN(q) ? 1 : qtyInput ? Math.max(1, q) : 1;
+                                    if(!Array.isArray(cart)) cart = [];
+                                    const existing = cart.find(c=>c.code==p.code);
+                                    if(existing){ existing.qty = (existing.qty||0) + qty; }
+                                    else { cart.push({code: p.code, name: p.name, desc: p.desc, price: p.price||0, qty: qty}); }
+                                    saveCart();
+                                    // switch to receipt/bon tab
+                                    try{ if(tabReceipt){ tabReceipt.click(); } else { panelReceipt.style.display='block'; panelScan.style.display='none'; } }catch(e){}
+                                }catch(err){ console.error('Add & Receipt failed', err); alert('Could not add to receipt: ' + (err && err.message ? err.message : String(err))); }
+                            };
+                        }
                     } else {
                         console.warn('Add button not found in DOM');
                     }
