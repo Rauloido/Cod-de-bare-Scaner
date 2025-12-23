@@ -787,15 +787,15 @@
                     const devices = await codeReader.listVideoInputDevices();
                     let preferred = undefined;
                                         if(devices && devices.length){
-                                            // prefer back camera that is NOT ultra-wide (avoid 'ultra' labels)
-                                            const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x)/i;
-                                            const backRegex = /(back|rear|environment|main)/i;
-                                            // try to find back camera without ultra keywords
-                                            let p = devices.find(d=> backRegex.test(d.label) && !ultraRegex.test(d.label));
-                                            if(!p) p = devices.find(d=> backRegex.test(d.label));
-                                            if(!p) p = devices.find(d=> !ultraRegex.test(d.label));
-                                            if(!p) p = devices[devices.length-1] || devices[0];
-                                            preferred = p;
+                                                                // prefer an ultra-wide back camera when available (user requested ultrawide)
+                                                                const ultraRegex = /(ultra|ultrawide|ultra-wide|wideangle|0\.5x|0\.3x|ultra wide)/i;
+                                                                const backRegex = /(back|rear|environment|main)/i;
+                                                                // try to find a back-facing ultra-wide camera first, then any ultra-wide, then any back camera
+                                                                let p = devices.find(d=> backRegex.test(d.label) && ultraRegex.test(d.label));
+                                                                if(!p) p = devices.find(d=> ultraRegex.test(d.label));
+                                                                if(!p) p = devices.find(d=> backRegex.test(d.label));
+                                                                if(!p) p = devices[devices.length-1] || devices[0];
+                                                                preferred = p;
                                             // if cameraSelect exists (rare), populate it — otherwise ignore (UI removed)
                                             if(cameraSelect){
                                                 cameraSelect.innerHTML = '';
@@ -875,13 +875,8 @@
                             }
                         }catch(e){ console.warn('facing check failed', e); }
                     }, 600);
-                    // best-effort: enforce 1x zoom after stream attachment (avoid ultra-wide behavior)
-                    setTimeout(()=>{
-                        try{
-                            const s = video.srcObject;
-                            if(s){ const t = s.getVideoTracks()[0]; if(t && t.applyConstraints){ t.applyConstraints({ advanced:[{ zoom: 1.0 }] }).catch(()=>{}); } }
-                        }catch(e){}
-                    }, 500);
+                    // Do not force 1x zoom — allow ultra-wide stream characteristics so scanning uses that camera.
+                    // If needed, device-specific zoom adjustments could be applied here, but we avoid forcing zoom.
                     // start OCR loop in parallel for cross-validation
                     try{ startOCRLoop(); }catch(e){ console.warn('startOCRLoop failed', e); }
                 }catch(e){
